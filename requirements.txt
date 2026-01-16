@@ -1,0 +1,14 @@
+# AI Pipeline Dependencies
+# ========================
+
+# LLM Clients
+google-genai>=1.0.0  # Gemini (추천: 2M context, 저렴)
+openai>=1.0.0
+anthropic>=0.18.0
+
+# Config & Utils
+pyyaml>=6.0
+
+# Optional: For better performance
+# aiohttp>=3.9.0  # async HTTP
+# rich>=13.0.0    # pretty terminal output
