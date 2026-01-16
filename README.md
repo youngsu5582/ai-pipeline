@@ -58,7 +58,7 @@ ai-monthly
 
 ### 1. 저장소 클론
 ```bash
-git clone https://github.com/your-username/ai-pipeline.git
+git clone https://github.com/youngsu5582/ai-pipeline.git
 cd ai-pipeline
 ```
 
