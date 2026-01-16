@@ -62,37 +62,69 @@ for f in config_files:
     echo "$result"
 }
 
-# === ANSI 제어 문자 제거 ===
 _ai_clean_log() {
     local log_file="$1"
 
     if [[ ! -f "$log_file" ]]; then
+        echo "Error: File not found - $log_file"
         return 1
     fi
 
     local temp_clean="${log_file}.clean"
 
-    # ANSI/OSC 시퀀스 및 제어 문자 제거
-    # - CSI 시퀀스: 색상, 커서 이동 등
-    # - OSC 시퀀스: 윈도우 타이틀 등
-    # - 특수 제어 문자: Backspace, Bell 등
-    LC_ALL=C sed -E \
-        -e 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
-        -e 's/\x1b\[\?([0-9;]*)[a-zA-Z]//g' \
-        -e 's/\x1b\][0-9;]*\x07//g' \
-        -e 's/\x1b[()][A-Z0-9]//g' \
-        "$log_file" 2>/dev/null | \
-        col -b 2>/dev/null | \
-        LC_ALL=C sed -E \
-        -e 's/[\x01-\x08\x0B\x0C\x0E-\x1F]//g' \
-        -e 's/[\x1b[:space:]]*$//g' \
-        > "$temp_clean" 2>/dev/null
+    # 1. Perl: ANSI 코드, 깨진 제어 문자, 스마트 'r' 제거
+    perl -pe '
+        # [A] 표준 ANSI 및 공통 제어 코드 제거
+        s/\x1b\[[0-9;]*[mK]//g;
+        s/\x1b\[\?[0-9;]*[hl]//g;
+        s/\x1b\[[0-9;]*[ABCDGHf]//g;
+        s/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g;
 
+        # [B] 깨진 제어 패턴(Artifacts) 제거
+        s/r[0-9]+;[0-9]+r[A-Z]*//g;   # r1;43r 등
+        s/[0-9]+;[0-9]+r[A-Z]*//g;    # 26;48rMM 등
+        s/J<[0-9]+u//g;               # J<1u
+        s/[0-9]+SrJ//g;               # 2SrJ
+
+        # [C] 스마트 "r" 제거 (영어 단어 보호)
+        s/(?<=[^a-zA-Z0-9])r$//g;     # 한글/특수문자 뒤의 r만 삭제
+        s/rMr$//g;                    # 문장 끝 rMr 삭제
+        s/[JM]+r+$//g;                # JMMMMr 등 삭제
+        
+        # [D] 나머지 청소
+        s/\x1b\[//g; s/\x1b//g;
+        s/╭─+╮//g; s/╰─+╯//g;         # 빈 박스 테두리 삭제
+    ' "$log_file" | \
+
+    # 2. 덮어쓰기 처리 (중복 문자 정돈)
+    col -b | \
+
+    # 3. 공백 정리 및 ★[최종 사용자 정의 필터링]★
+    # 이 sed 블록 안에 삭제하고 싶은 패턴을 추가하세요. (/패턴/d)
+    sed -E '
+        s/[ \t]+$//;                # 줄 끝 공백 제거 (기본)
+
+        # --- 커스텀 삭제 목록 ---
+        /─{5,}/d;                   # "─"가 5개 이상 연속된 구분선 라인 삭제
+        /esc to interrupt/d;        # "esc to interrupt" 포함 라인 삭제
+        /orked for s/d;             # "orked for s" (Worked for s 찌꺼기) 포함 라인 삭제
+        /se \/skills to list/d;     # 하단 스킬 목록 안내 삭제
+        /for shortcuts/d;           # 단축키 안내 삭제
+        /OpenAI Codex \(v/d;        # 상단 헤더 삭제
+        # ---------------------
+    ' | \
+
+    # 4. 빈 줄 압축 (3줄 이상 빈 줄 -> 1줄)
+    cat -s > "$temp_clean"
+
+    # 5. 결과 적용
     if [[ -s "$temp_clean" ]]; then
         mv "$temp_clean" "$log_file"
+        echo "Log cleaned: Custom filters applied."
         return 0
     else
         rm -f "$temp_clean"
+        echo "Error: Output is empty."
         return 1
     fi
 }
