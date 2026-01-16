@@ -1,0 +1,55 @@
+# AI Pipeline .gitignore
+
+# ===== 개인 설정 (절대 커밋하지 않음) =====
+config/settings.local.yaml
+config/settings.yaml
+.env
+.env.local
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ===== Logs & Data =====
+*.log
+logs/
+*.jsonl
+
+# ===== 로컬 데이터 =====
+~/.ai-pipeline/
+
+# ===== Quartz (선택) =====
+quartz/
+.quartz-cache/

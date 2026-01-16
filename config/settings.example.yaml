@@ -1,0 +1,98 @@
+# AI Pipeline Configuration
+# ==========================
+# 이 파일을 복사하여 settings.yaml 또는 settings.local.yaml을 만드세요.
+# 환경변수로도 설정 가능합니다 (환경변수가 우선).
+#
+# 복사: cp config/settings.example.yaml config/settings.local.yaml
+
+# Obsidian Vault 설정
+# 환경변수: AI_VAULT_PATH, AI_TARGET_FOLDER, AI_DRAFTS_FOLDER, AI_DAILY_FOLDER, AI_QUIZZES_FOLDER
+vault:
+  path: "~/Documents/Obsidian"           # Obsidian vault 경로
+  target_folder: "study"                 # 최종 지식 저장 폴더
+  drafts_folder: "study/_drafts"         # 1차 정제 노트 (staging)
+  daily_folder: "DAILY"                  # 일일 노트 폴더
+  quizzes_folder: "study/_quizzes"       # 복습 퀴즈
+
+# LLM 설정
+# 환경변수: AI_LLM_PROVIDER, GOOGLE_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
+llm:
+  # provider: gemini | openai | anthropic
+  provider: "gemini"                     # 기본값: gemini (2M context, 가장 저렴)
+
+  gemini:
+    model: "gemini-3-flash-preview"      # 프리뷰 모델
+    # GOOGLE_API_KEY 환경변수 필요
+    # 발급: https://aistudio.google.com/apikey
+
+  openai:
+    model: "gpt-4o-mini"
+    # OPENAI_API_KEY 환경변수 필요
+
+  anthropic:
+    model: "claude-3-5-haiku-20241022"
+    # ANTHROPIC_API_KEY 환경변수 필요
+
+# 파이프라인 설정
+# 환경변수: AI_RAW_LOGS_DIR, AI_PROCESSED_LOGS_DIR
+pipeline:
+  raw_logs_dir: "~/.ai-pipeline/raw"
+  processed_logs_dir: "~/.ai-pipeline/processed"
+
+  # 자동 분류 규칙 (키워드 -> 폴더 매핑)
+  auto_categorize:
+    - keywords: ["docker", "container", "dockerfile", "compose"]
+      folder: "Docker"
+    - keywords: ["java", "spring", "jpa", "gradle", "maven"]
+      folder: "Java"
+    - keywords: ["kafka", "consumer", "producer", "topic", "partition"]
+      folder: "kafka"
+    - keywords: ["aws", "s3", "ec2", "lambda", "cloudfront"]
+      folder: "aws"
+    - keywords: ["redis", "cache", "pub/sub"]
+      folder: "Redis"
+    - keywords: ["elasticsearch", "kibana", "logstash", "elk"]
+      folder: "Elasticsearch"
+    - keywords: ["shell", "bash", "zsh", "script"]
+      folder: "shell"
+    - keywords: ["ai", "llm", "gpt", "claude", "prompt"]
+      folder: "AI"
+    - keywords: ["rabbitmq", "amqp", "message queue"]
+      folder: "RabbitMQ"
+    - keywords: ["database", "sql", "postgresql", "mysql"]
+      folder: "DB"
+    - keywords: ["python", "pip", "virtualenv"]
+      folder: "Python"
+    - keywords: ["react", "typescript", "javascript", "frontend"]
+      folder: "Frontend"
+
+# Sync Providers 설정
+# 각 provider를 enabled: true/false로 활성화/비활성화
+sync:
+  # GitHub 활동 동기화
+  github:
+    enabled: true
+    # 로컬 git 커밋 수집할 저장소 경로들
+    repos:
+      - "~/Projects/my-project"
+      # - "~/Projects/another-project"
+
+  # JIRA 활동 동기화
+  jira:
+    enabled: false                    # true로 변경하여 활성화
+    # JIRA_API_TOKEN, JIRA_EMAIL 환경변수 필요
+    server: "https://your-domain.atlassian.net"
+    project: "PROJECT-KEY"            # 프로젝트 키 (예: MYPROJ)
+    # 발급: https://id.atlassian.com/manage-profile/security/api-tokens
+
+# Daily Note 설정
+daily:
+  # 어제 노트 연결
+  link_yesterday: true                # 어제 Daily Note 링크 추가
+  carry_over_todos: true              # 미완료 할 일 자동 이월
+  carry_over_concerns: true           # 미해결 고민 자동 이월
+
+# Quartz 설정 (선택사항)
+quartz:
+  port: 8080
+  auto_rebuild: true
