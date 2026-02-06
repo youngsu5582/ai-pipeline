@@ -1152,6 +1152,28 @@
           "default": true
         }
       ]
+    },
+    {
+      "id": "weekly-digest",
+      "name": "주간 다이제스트",
+      "description": "한 주간 활동 분석 리포트 자동 생성 (AI 분석)",
+      "command": "curl -s -X POST http://localhost:3030/api/insights/weekly-digest -H 'Content-Type: application/json' -d '{}'",
+      "schedule": "0 18 * * 5",
+      "enabled": true,
+      "category": "review",
+      "tags": [
+        "weekly",
+        "digest",
+        "ai",
+        "analytics"
+      ],
+      "options": [],
+      "execution": {
+        "timeout": 600000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
     }
   ],
   "edges": [

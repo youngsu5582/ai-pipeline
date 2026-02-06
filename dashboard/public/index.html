@@ -388,6 +388,9 @@
           <button onclick="setHomeToday()" class="px-2.5 py-1 text-xs text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition-colors ml-1">오늘</button>
         </div>
       </div>
+      <!-- 스마트 서제스션 -->
+      <div id="homeSuggestions" class="mb-4 space-y-2"></div>
+
       <!-- 4칸 요약 카드 -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div onclick="showTab('jobs')" class="cursor-pointer bg-gradient-to-br from-blue-900/40 to-blue-800/20 border border-blue-800/30 rounded-xl p-5 hover:border-blue-600/50 hover:scale-[1.02] transition-all">
@@ -425,7 +428,7 @@
       </div>
 
       <!-- 빠른 액션 -->
-      <div class="grid grid-cols-3 gap-3 mb-6">
+      <div class="grid grid-cols-4 gap-3 mb-6">
         <button onclick="openQuickInput()" class="px-4 py-3 bg-purple-600 hover:bg-purple-700 rounded-xl text-sm font-medium transition-colors">
           📝 빠른 메모
         </button>
@@ -434,6 +437,9 @@
         </button>
         <button onclick="generateTodayFullReport()" class="px-4 py-3 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-400 hover:to-pink-400 rounded-xl text-sm font-medium transition-all">
           📊 오늘 보고서
+        </button>
+        <button onclick="generateWeeklyDigest()" class="px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 rounded-xl text-sm font-medium transition-all">
+          📈 주간 분석
         </button>
       </div>
 
@@ -483,6 +489,76 @@
           </div>
           <div id="homeTimeline" class="text-sm">
             <div class="text-gray-500 text-center py-6">로딩중...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 생산성 분석 -->
+      <div class="bg-gray-800/50 rounded-xl p-5 border border-gray-700/50 mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <button onclick="toggleProductivityCollapse()" class="flex items-center gap-1.5 group">
+            <span id="prodCollapseIcon" class="text-gray-500 text-xs transition-transform duration-200 inline-block">&#9660;</span>
+            <h3 class="text-sm font-bold text-gray-300 group-hover:text-gray-100 transition-colors">생산성 분석</h3>
+          </button>
+          <div class="flex items-center gap-2">
+            <button onclick="setProductivityPeriod(7)" id="prodPeriod7" class="prod-period-btn px-2 py-0.5 rounded text-xs border border-blue-600 text-blue-400 bg-blue-900/30">7일</button>
+            <button onclick="setProductivityPeriod(14)" id="prodPeriod14" class="prod-period-btn px-2 py-0.5 rounded text-xs border border-gray-600 text-gray-400">14일</button>
+            <button onclick="setProductivityPeriod(30)" id="prodPeriod30" class="prod-period-btn px-2 py-0.5 rounded text-xs border border-gray-600 text-gray-400">30일</button>
+          </div>
+        </div>
+        <div id="productivityBody" style="transition: max-height 0.3s ease, opacity 0.2s ease">
+          <!-- 4칸 요약 -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <div class="text-xs text-gray-500">총 세션</div>
+              <div id="prodTotalSessions" class="text-2xl font-bold mt-0.5">-</div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <div class="text-xs text-gray-500">총 메모</div>
+              <div id="prodTotalMemos" class="text-2xl font-bold mt-0.5">-</div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <div class="text-xs text-gray-500">작업 실행</div>
+              <div id="prodTotalJobs" class="text-2xl font-bold mt-0.5">-</div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <div class="text-xs text-gray-500">일평균 메모</div>
+              <div id="prodAvgMemos" class="text-2xl font-bold mt-0.5">-</div>
+            </div>
+          </div>
+          <!-- 차트 2x2 -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <h4 class="text-xs text-gray-400 mb-2">시간대별 활동</h4>
+              <div id="hourlyHeatmap" class="grid gap-0.5" style="grid-template-columns: repeat(24, 1fr); height: 80px;"></div>
+              <div class="flex justify-between mt-1 px-0.5">
+                <span class="text-[9px] text-gray-600">0시</span>
+                <span class="text-[9px] text-gray-600">6시</span>
+                <span class="text-[9px] text-gray-600">12시</span>
+                <span class="text-[9px] text-gray-600">18시</span>
+                <span class="text-[9px] text-gray-600">24시</span>
+              </div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <h4 class="text-xs text-gray-400 mb-2">프로젝트 분포</h4>
+              <div style="position:relative; height:140px;">
+                <canvas id="projectDistChart"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <h4 class="text-xs text-gray-400 mb-2">일별 트렌드</h4>
+              <div style="position:relative; height:140px;">
+                <canvas id="prodDailyTrendChart"></canvas>
+              </div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <h4 class="text-xs text-gray-400 mb-2">기간 비교 (전반 vs 후반)</h4>
+              <div style="position:relative; height:140px;">
+                <canvas id="weekCompChart"></canvas>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2107,6 +2183,9 @@
           break;
         case 'day-wrapup':
           showDayWrapupResult(data.result);
+          break;
+        case 'weekly-digest':
+          showWeeklyDigestModal(data.result);
           break;
       }
     }
@@ -6182,6 +6261,308 @@
 
       // 타임라인 로드
       loadTimeline();
+      // 서제스션 & 생산성 분석 로드
+      loadSuggestions();
+      loadProductivity();
+    }
+
+    // ============ 스마트 서제스션 ============
+
+    function getDismissedSuggestions() {
+      try {
+        const raw = localStorage.getItem('dismissedSuggestions');
+        if (!raw) return {};
+        const data = JSON.parse(raw);
+        const now = Date.now();
+        // 24시간 TTL
+        for (const [k, v] of Object.entries(data)) {
+          if (now - v > 24 * 60 * 60 * 1000) delete data[k];
+        }
+        return data;
+      } catch { return {}; }
+    }
+
+    function dismissSuggestion(id) {
+      const data = getDismissedSuggestions();
+      data[id] = Date.now();
+      localStorage.setItem('dismissedSuggestions', JSON.stringify(data));
+      const el = document.getElementById(`suggestion-${id}`);
+      if (el) {
+        el.style.transition = 'opacity 0.3s, transform 0.3s';
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(20px)';
+        setTimeout(() => el.remove(), 300);
+      }
+    }
+
+    async function loadSuggestions() {
+      const today = new Date().toISOString().split('T')[0];
+      if (homeDate !== today) {
+        document.getElementById('homeSuggestions').innerHTML = '';
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE}/api/insights/suggestions`);
+        const data = await res.json();
+        const dismissed = getDismissedSuggestions();
+        const suggestions = (data.suggestions || []).filter(s => !dismissed[s.id]);
+
+        const container = document.getElementById('homeSuggestions');
+        if (suggestions.length === 0) {
+          container.innerHTML = '';
+          return;
+        }
+
+        container.innerHTML = suggestions.map(s => {
+          const actionHandler = s.action
+            ? (s.action.type === 'showTab' ? `showTab('${s.action.tab}')` : `${s.action.type}()`)
+            : '';
+          const clickAttr = actionHandler ? `onclick="${actionHandler}"` : '';
+          const cursorClass = actionHandler ? 'cursor-pointer' : '';
+          const borderColor = s.type === 'achievement' ? 'border-green-700/50' : s.type === 'reminder' && s.priority === 'high' ? 'border-red-700/50' : 'border-gray-700/50';
+          return `<div id="suggestion-${s.id}" ${clickAttr}
+            class="flex items-center gap-3 p-3 rounded-lg bg-gray-800/60 border ${borderColor} hover:bg-gray-800 transition-colors ${cursorClass}">
+            <span class="text-lg flex-shrink-0">${s.icon}</span>
+            <span class="text-sm text-gray-300 flex-1">${s.message}</span>
+            <button onclick="event.stopPropagation(); dismissSuggestion('${s.id}')"
+              class="ml-auto text-gray-600 hover:text-gray-400 text-xs flex-shrink-0 px-1">✕</button>
+          </div>`;
+        }).join('');
+      } catch (err) {
+        console.error('서제스션 로드 실패:', err);
+      }
+    }
+
+    // ============ 생산성 분석 ============
+
+    let productivityPeriod = 7;
+    let productivityCollapsed = false;
+    let prodDailyTrendChart = null;
+    let projectDistChart = null;
+    let weekCompChart = null;
+
+    function setProductivityPeriod(days) {
+      productivityPeriod = days;
+      document.querySelectorAll('.prod-period-btn').forEach(btn => {
+        btn.classList.remove('border-blue-600', 'text-blue-400', 'bg-blue-900/30');
+        btn.classList.add('border-gray-600', 'text-gray-400');
+      });
+      const active = document.getElementById(`prodPeriod${days}`);
+      if (active) {
+        active.classList.remove('border-gray-600', 'text-gray-400');
+        active.classList.add('border-blue-600', 'text-blue-400', 'bg-blue-900/30');
+      }
+      loadProductivity();
+    }
+
+    function toggleProductivityCollapse() {
+      productivityCollapsed = !productivityCollapsed;
+      const body = document.getElementById('productivityBody');
+      const icon = document.getElementById('prodCollapseIcon');
+      if (productivityCollapsed) {
+        body.style.maxHeight = '0';
+        body.style.opacity = '0';
+        body.style.overflow = 'hidden';
+        icon.style.transform = 'rotate(-90deg)';
+      } else {
+        body.style.maxHeight = '';
+        body.style.opacity = '1';
+        body.style.overflow = '';
+        icon.style.transform = '';
+      }
+    }
+
+    async function loadProductivity() {
+      try {
+        const res = await fetch(`${API_BASE}/api/insights/productivity?days=${productivityPeriod}`);
+        const data = await res.json();
+
+        // 요약 카드
+        document.getElementById('prodTotalSessions').textContent = data.overview.totalSessions;
+        document.getElementById('prodTotalMemos').textContent = data.overview.totalMemos;
+        document.getElementById('prodTotalJobs').textContent = data.overview.totalJobRuns;
+        document.getElementById('prodAvgMemos').textContent = data.overview.avgDailyMemos;
+
+        // 차트 렌더링
+        renderHourlyHeatmap(data.hourlyActivity);
+        renderProjectDistribution(data.topProjects);
+        renderProdDailyTrend(data.dailyTrend);
+        renderWeekComparison(data.weekComparison);
+      } catch (err) {
+        console.error('생산성 분석 로드 실패:', err);
+      }
+    }
+
+    function renderHourlyHeatmap(hourly) {
+      const container = document.getElementById('hourlyHeatmap');
+      const maxVal = Math.max(1, ...hourly.map(h => h.sessions + h.memos + h.jobs));
+
+      container.innerHTML = hourly.map(h => {
+        const total = h.sessions + h.memos + h.jobs;
+        const intensity = total / maxVal;
+        const bg = total === 0
+          ? 'bg-gray-800'
+          : intensity < 0.25 ? 'bg-blue-900/40' : intensity < 0.5 ? 'bg-blue-700/50' : intensity < 0.75 ? 'bg-blue-500/60' : 'bg-blue-400/70';
+        const title = `${h.hour}시: 세션 ${h.sessions}, 메모 ${h.memos}, 작업 ${h.jobs}`;
+        return `<div class="${bg} rounded-sm flex flex-col justify-end items-center" title="${title}" style="min-height: 100%">
+          ${total > 0 ? `<span class="text-[9px] text-gray-300">${total}</span>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function renderProjectDistribution(projects) {
+      const ctx = document.getElementById('projectDistChart')?.getContext('2d');
+      if (!ctx) return;
+      if (projectDistChart) projectDistChart.destroy();
+
+      if (!projects || projects.length === 0) {
+        projectDistChart = null;
+        return;
+      }
+
+      const colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
+      projectDistChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: projects.map(p => p.project),
+          datasets: [{
+            data: projects.map(p => p.sessions),
+            backgroundColor: colors.slice(0, projects.length),
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#9ca3af', font: { size: 10 }, boxWidth: 12 } }
+          }
+        }
+      });
+    }
+
+    function renderProdDailyTrend(trend) {
+      const ctx = document.getElementById('prodDailyTrendChart')?.getContext('2d');
+      if (!ctx) return;
+      if (prodDailyTrendChart) prodDailyTrendChart.destroy();
+
+      prodDailyTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: trend.map(d => d.date.slice(5)), // MM-DD
+          datasets: [
+            { label: '세션', data: trend.map(d => d.sessions), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.3, fill: true },
+            { label: '메모', data: trend.map(d => d.memos), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.3, fill: true },
+            { label: '작업', data: trend.map(d => d.jobs), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', tension: 0.3, fill: true }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { ticks: { color: '#6b7280', font: { size: 9 } }, grid: { color: 'rgba(55,65,81,0.3)' } },
+            y: { beginAtZero: true, ticks: { color: '#6b7280', font: { size: 9 }, stepSize: 1 }, grid: { color: 'rgba(55,65,81,0.3)' } }
+          },
+          plugins: { legend: { labels: { color: '#9ca3af', font: { size: 10 }, boxWidth: 12 } } }
+        }
+      });
+    }
+
+    function renderWeekComparison(comp) {
+      const ctx = document.getElementById('weekCompChart')?.getContext('2d');
+      if (!ctx) return;
+      if (weekCompChart) weekCompChart.destroy();
+
+      weekCompChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['세션', '메모', '작업'],
+          datasets: [
+            { label: '전반', data: [comp.firstHalf.sessions, comp.firstHalf.memos, comp.firstHalf.jobs], backgroundColor: 'rgba(99,102,241,0.6)' },
+            { label: '후반', data: [comp.secondHalf.sessions, comp.secondHalf.memos, comp.secondHalf.jobs], backgroundColor: 'rgba(139,92,246,0.6)' }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: '#6b7280', font: { size: 10 } }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { color: '#6b7280', font: { size: 9 }, stepSize: 1 }, grid: { color: 'rgba(55,65,81,0.3)' } }
+          },
+          plugins: { legend: { labels: { color: '#9ca3af', font: { size: 10 }, boxWidth: 12 } } }
+        }
+      });
+    }
+
+    // ============ 주간 다이제스트 ============
+
+    async function generateWeeklyDigest() {
+      try {
+        const res = await fetch(`${API_BASE}/api/insights/weekly-digest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId })
+        });
+        const data = await res.json();
+        if (data.taskId) {
+          showToast('주간 다이제스트 생성 시작... Claude가 분석 중입니다', 'info');
+        }
+      } catch (err) {
+        showToast('주간 다이제스트 생성 실패: ' + err.message, 'error');
+      }
+    }
+
+    function showWeeklyDigestModal(result) {
+      const modal = document.getElementById('sessionDetailModal');
+      if (!modal) return;
+
+      modal.style.display = 'flex';
+
+      const md = result.markdown || '(내용 없음)';
+      const stats = result.stats || {};
+      const weekRange = `${result.weekStart || '?'} ~ ${result.weekEnd || '?'}`;
+
+      const contentDiv = document.getElementById('sessionDetailContent');
+      contentDiv.innerHTML = `
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-bold text-gray-200">📊 주간 다이제스트 (${weekRange})</h2>
+          <div class="flex gap-2">
+            <button onclick="copyDigest()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-300">📋 복사</button>
+            <button onclick="document.getElementById('sessionDetailModal').style.display='none'" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs text-gray-300">닫기</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-4 gap-3 mb-4">
+          <div class="bg-gray-900/50 rounded-lg p-2 text-center">
+            <div class="text-xs text-gray-500">세션</div>
+            <div class="text-lg font-bold text-purple-400">${stats.sessions || 0}</div>
+          </div>
+          <div class="bg-gray-900/50 rounded-lg p-2 text-center">
+            <div class="text-xs text-gray-500">작업</div>
+            <div class="text-lg font-bold text-green-400">${stats.jobRuns || 0}</div>
+          </div>
+          <div class="bg-gray-900/50 rounded-lg p-2 text-center">
+            <div class="text-xs text-gray-500">메모</div>
+            <div class="text-lg font-bold text-yellow-400">${stats.memos || 0}</div>
+          </div>
+          <div class="bg-gray-900/50 rounded-lg p-2 text-center">
+            <div class="text-xs text-gray-500">성공률</div>
+            <div class="text-lg font-bold text-blue-400">${stats.successRate || 0}%</div>
+          </div>
+        </div>
+        <div class="markdown-content text-sm text-gray-300">
+          ${typeof marked !== 'undefined' ? marked.parse(md) : md.replace(/\n/g, '<br>')}
+        </div>
+      `;
+
+      // Store for copy
+      modal._digestMarkdown = md;
+    }
+
+    function copyDigest() {
+      const modal = document.getElementById('sessionDetailModal');
+      const md = modal?._digestMarkdown || '';
+      navigator.clipboard.writeText(md).then(() => showToast('클립보드에 복사됨', 'success'));
     }
 
     // ============ 통합 타임라인 ============

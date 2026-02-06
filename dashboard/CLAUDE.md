@@ -67,6 +67,9 @@ npm start             # 프로덕션 실행
 | 모닝 플랜 | `openMorningStart()` | index.html |
 | 오늘 보고서 | `generateTodayFullReport()` | index.html |
 | GitHub 활동 수집 | `/api/github/activity` | server.js (멀티 계정, PR title 해석) |
+| 스마트 서제스션 | `loadSuggestions()` | index.html (규칙 기반, localStorage dismiss) |
+| 생산성 분석 | `loadProductivity()` | index.html (4개 차트, 기간 전환) |
+| 주간 다이제스트 | `generateWeeklyDigest()` | index.html (Claude CLI 비동기 태스크) |
 | SSE 이벤트 | `initSSE()` | index.html |
 
 ## 아키텍처
@@ -84,6 +87,7 @@ npm start             # 프로덕션 실행
 - GitHub 멀티 계정 활동 수집 (Events API)
 - Obsidian Daily Note 파싱 - `parseObsidianMemos(date)` 헬퍼 (한국어 시간 형식 지원)
 - 통합 타임라인 API (`/api/timeline`)
+- AI 인사이트 API (`/api/insights/suggestions`, `/api/insights/productivity`, `/api/insights/weekly-digest`)
 
 **public/index.html** (~7,400줄) - 싱글 페이지 대시보드:
 - Tailwind CSS 다크 테마
@@ -100,6 +104,7 @@ npm start             # 프로덕션 실행
 | `backlogs.json` | 백로그 항목 |
 | `morning-plans.json` | 하루 시작 계획 |
 | `session-aliases.json` | 세션 별칭 |
+| `weekly-digests.json` | 주간 다이제스트 |
 
 ### 데이터 흐름
 ```
@@ -129,7 +134,11 @@ Slack (webhooks)
 | GET | `/api/github/activity?date=YYYY-MM-DD` | GitHub 활동 (멀티 계정) |
 | GET | `/api/timeline?date=YYYY-MM-DD` | 통합 타임라인 (6개 소스 통합, 시간순) |
 | GET | `/api/search?q=키워드&types=...` | 통합 검색 (메모, 세션, 작업, 백로그) |
-| POST | `/api/tasks` | 비동기 태스크 (ask, daily-report 등) |
+| GET | `/api/insights/suggestions` | 스마트 서제스션 (규칙 기반 5가지) |
+| GET | `/api/insights/productivity?days=N` | 생산성 분석 (시간대/일별/프로젝트/비교) |
+| POST | `/api/insights/weekly-digest` | 주간 다이제스트 생성 (비동기 태스크) |
+| GET | `/api/insights/weekly-digest?week=YYYY-MM-DD` | 저장된 다이제스트 조회 |
+| POST | `/api/tasks` | 비동기 태스크 (ask, daily-report, weekly-digest 등) |
 | GET | `/api/tasks/events` | SSE 스트림 |
 
 ## 환경변수
@@ -177,9 +186,12 @@ dashboard/
 | 4 | AI 심화 (메모 분류, 세션 인사이트, 지식 그래프) | `spec-phase4-ai-deep-integration.md` | P2-P3 |
 | 5 | 플랫폼 확장 (모바일, 위젯, 서버 모듈화) | `spec-phase5-platform-extension.md` | P3-P4 |
 
-**구현 완료**: Phase 1 전체
+**구현 완료**: Phase 1 전체 + Phase 2 전체
 - 1.1 통합 타임라인 (`GET /api/timeline` + 접기/펼치기 + 시간 범위 슬라이더 + 타입 필터)
 - 1.2 통합 검색 (`GET /api/search` + Cmd+K 모달 + 키보드 네비게이션)
 - 1.3 날짜 네비게이션 (홈 탭 날짜 선택기 + 전체 데이터 날짜 연동)
+- 2.1 주간 다이제스트 (`POST/GET /api/insights/weekly-digest` + Claude CLI 분석 + Obsidian WEEKLY/ 저장)
+- 2.2 생산성 분석 (`GET /api/insights/productivity` + 히트맵/도넛/트렌드/비교 차트)
+- 2.3 스마트 서제스션 (`GET /api/insights/suggestions` + 규칙 기반 5가지 제안 + localStorage 24시간 dismiss)
 
-**다음 작업**: Phase 2 AI 인사이트 + 생산성 분석 (`spec-phase2-ai-insights.md` 참조)
+**다음 작업**: Phase 3 자동화 고도화 (`spec-phase3-advanced-automation.md` 참조)

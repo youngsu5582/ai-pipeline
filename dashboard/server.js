@@ -1744,6 +1744,9 @@ async function processTask(task) {
       case 'day-wrapup':
         result = await processDayWrapupTask(task);
         break;
+      case 'weekly-digest':
+        result = await processWeeklyDigestTask(task);
+        break;
       default:
         throw new Error(`Unknown task type: ${task.type}`);
     }
@@ -1807,7 +1810,8 @@ async function processAskTask(task) {
     console.log(`[Task ${task.id}] Claude CLI 실행: ${claudePath}`);
 
     const claude = spawn(claudePath, ['-p', prompt], {
-      env: { ...process.env, NO_COLOR: '1' }
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
     task.logs.push({ type: 'info', time: new Date().toISOString(), text: `프로세스 시작됨 (PID: ${claude.pid})` });
@@ -1925,7 +1929,8 @@ ${JSON.stringify(sessionSummaries, null, 2)}
 
   const report = await new Promise((resolve, reject) => {
     const claude = spawn(claudePath, ['-p', prompt], {
-      env: { ...process.env, NO_COLOR: '1' }
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
     runningTaskProcesses.set(task.id, claude);
@@ -2036,7 +2041,8 @@ ${userMessages.join('\n---\n')}
     console.log(`[Task ${task.id}] Claude CLI 실행: ${claudePath}`);
 
     const claude = spawn(claudePath, ['-p', prompt], {
-      env: { ...process.env, NO_COLOR: '1' }
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
     task.logs.push({ type: 'info', time: new Date().toISOString(), text: `프로세스 시작됨 (PID: ${claude.pid})` });
@@ -2179,7 +2185,8 @@ ${quickMemos.map(m => m?.content || m?.text || '').join('\n')}
 
   const report = await new Promise((resolve, reject) => {
     const claude = spawn(claudePath, ['-p', prompt], {
-      env: { ...process.env, NO_COLOR: '1' }
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
     runningTaskProcesses.set(task.id, claude);
@@ -2368,7 +2375,8 @@ ${reflection ? `
 
   const report = await new Promise((resolve, reject) => {
     const claude = spawn(claudePath, ['-p', prompt], {
-      env: { ...process.env, NO_COLOR: '1' }
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
     runningTaskProcesses.set(task.id, claude);
@@ -2423,6 +2431,213 @@ ${reflection ? `
   };
 }
 
+// --- 주간 다이제스트 태스크 처리 ---
+async function processWeeklyDigestTask(task) {
+  const today = new Date().toISOString().split('T')[0];
+  const weekStart = task.payload.weekStart || getWeekStart(today);
+  const weekEndDate = new Date(weekStart + 'T00:00:00');
+  weekEndDate.setDate(weekEndDate.getDate() + 6);
+  const weekEnd = weekEndDate.toISOString().split('T')[0];
+  const dates = getDateRange(weekStart, weekEnd);
+
+  updateTaskProgress(task, 10, '주간 데이터 수집 중...');
+
+  // 1. 데이터 수집
+  let allSessions = [];
+  let allMemos = [];
+  let allObsidianMemos = [];
+  let allPlans = [];
+
+  for (const date of dates) {
+    try { allSessions.push(...findSessions(date)); } catch (e) { /* ignore */ }
+    try { allObsidianMemos.push(...parseObsidianMemos(date)); } catch (e) { /* ignore */ }
+  }
+
+  const weekMemos = loadQuickMemos().filter(m =>
+    m.timestamp >= weekStart && m.timestamp < weekEnd + 'T23:59:59'
+  );
+  allMemos = weekMemos;
+
+  const weekPlans = loadMorningPlans().filter(p =>
+    p.date >= weekStart && p.date <= weekEnd
+  );
+  allPlans = weekPlans;
+
+  const weekHistory = jobHistory.filter(h =>
+    h.startTime >= weekStart && h.startTime < weekEnd + 'T23:59:59'
+  );
+
+  const weekBacklogs = loadBacklogs();
+  const completedBacklogs = weekBacklogs.filter(b => b.done && b.updatedAt >= weekStart && b.updatedAt <= weekEnd + 'T23:59:59');
+
+  updateTaskProgress(task, 30, 'Claude 분석 프롬프트 구성 중...');
+
+  // 2. 통계 계산
+  const totalJobRuns = weekHistory.length;
+  const successCount = weekHistory.filter(h => h.status === 'success').length;
+  const successRate = totalJobRuns > 0 ? Math.round((successCount / totalJobRuns) * 100) : 0;
+
+  // 프로젝트별 세션
+  const projects = [...new Set(allSessions.map(s => s.project || 'unknown'))];
+
+  // 세션 요약
+  const sessionSummaries = allSessions.slice(0, 20).map(s =>
+    `- [${s.modifiedAt?.split('T')[0] || '?'}] ${s.project || 'unknown'}: ${s.firstMessage?.substring(0, 80) || '(내용 없음)'}`
+  ).join('\n');
+
+  // 메모 내용
+  const memoContents = [...allMemos.map(m => `- [대시보드] ${m.content?.substring(0, 100) || ''}`),
+    ...allObsidianMemos.slice(0, 20).map(m => `- [Obsidian] ${m.content?.substring(0, 100) || ''}`)
+  ].join('\n');
+
+  // 작업 이력 요약
+  const jobSummary = {};
+  for (const h of weekHistory) {
+    const name = h.jobName || h.jobId;
+    if (!jobSummary[name]) jobSummary[name] = { total: 0, success: 0 };
+    jobSummary[name].total++;
+    if (h.status === 'success') jobSummary[name].success++;
+  }
+  const jobHistorySummary = Object.entries(jobSummary)
+    .map(([name, s]) => `- ${name}: ${s.total}회 실행 (성공 ${s.success})`)
+    .join('\n');
+
+  // 3. Claude 프롬프트
+  const prompt = `당신은 개인 생산성 분석가입니다. 아래 데이터를 분석하여 주간 다이제스트를 작성하세요.
+
+## 분석 데이터
+- 기간: ${weekStart} ~ ${weekEnd}
+- Claude 세션: ${allSessions.length}개 (프로젝트: ${projects.join(', ')})
+- 작업 실행: ${totalJobRuns}회 (성공률: ${successRate}%)
+- 메모: ${allMemos.length + allObsidianMemos.length}개
+- 완료 백로그: ${completedBacklogs.length}개
+- 모닝 플랜: ${allPlans.length}일
+
+## 세션 상세
+${sessionSummaries || '(세션 데이터 없음)'}
+
+## 메모 내용
+${memoContents || '(메모 없음)'}
+
+## 작업 이력 요약
+${jobHistorySummary || '(작업 이력 없음)'}
+
+---
+
+아래 형식으로 분석해주세요:
+
+# 📊 주간 다이제스트 (${weekStart} ~ ${weekEnd})
+
+## 🎯 이번 주 하이라이트
+- (가장 의미있는 성과 3개)
+
+## 📈 활동 요약
+- 세션 수 / 평균 시간 / 가장 활발한 프로젝트
+- 작업 실행 / 성공률 / 가장 많이 실행된 작업
+
+## 💡 주요 학습 & 인사이트
+- (세션과 메모에서 추출한 핵심 학습 내용)
+
+## 🔄 진행 중인 업무
+- (아직 끝나지 않은 것들, 백로그에서 추출)
+
+## 🎯 다음 주 제안
+- (데이터 기반 구체적 제안 3개)
+
+## 📉 개선 포인트
+- (패턴 분석 기반, 예: "수요일에 집중도가 낮아지는 경향")`;
+
+  updateTaskProgress(task, 40, 'Claude CLI 실행 중...');
+
+  // 4. Claude CLI 실행
+  const claudePath = process.env.CLAUDE_CLI_PATH ||
+    path.join(os.homedir(), '.local', 'bin', 'claude');
+
+  if (!fs.existsSync(claudePath)) {
+    throw new Error(`Claude CLI를 찾을 수 없습니다: ${claudePath}`);
+  }
+
+  task.command = `${claudePath} -p "..."`;
+  task.logs.push({ type: 'info', time: new Date().toISOString(), text: `주간 데이터: 세션 ${allSessions.length}개, 메모 ${allMemos.length + allObsidianMemos.length}개, 작업 ${totalJobRuns}회` });
+
+  const markdown = await new Promise((resolve, reject) => {
+    const claude = spawn(claudePath, ['-p', prompt], {
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    runningTaskProcesses.set(task.id, claude);
+
+    let stdout = '';
+    let stderr = '';
+
+    claude.stdout.on('data', (data) => {
+      stdout += data.toString();
+      task.stdout = stdout;
+      updateTaskProgress(task, 60, 'Claude 응답 수신 중...');
+    });
+
+    claude.stderr.on('data', (data) => {
+      stderr += data.toString();
+      task.stderr = stderr;
+    });
+
+    const timeoutId = setTimeout(() => {
+      claude.kill('SIGTERM');
+      reject(new Error('타임아웃 (10분)'));
+    }, 600000);
+
+    claude.on('close', (code) => {
+      clearTimeout(timeoutId);
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(stderr || `Exit code: ${code}`));
+    });
+
+    claude.on('error', (err) => {
+      clearTimeout(timeoutId);
+      reject(new Error(`Claude CLI 실행 실패: ${err.message}`));
+    });
+  });
+
+  updateTaskProgress(task, 85, '결과 저장 중...');
+
+  // 5. 저장
+  const digest = {
+    id: `wd-${weekStart}`,
+    weekStart,
+    weekEnd,
+    markdown,
+    stats: {
+      sessions: allSessions.length,
+      jobRuns: totalJobRuns,
+      memos: allMemos.length + allObsidianMemos.length,
+      successRate
+    },
+    createdAt: new Date().toISOString()
+  };
+
+  const digests = loadWeeklyDigests();
+  const existIdx = digests.findIndex(d => d.weekStart === weekStart);
+  if (existIdx >= 0) digests[existIdx] = digest;
+  else digests.push(digest);
+  saveWeeklyDigests(digests);
+
+  // Obsidian에 저장
+  try {
+    const { vaultPath } = getObsidianPaths();
+    const weeklyDir = path.join(vaultPath, 'WEEKLY');
+    if (!fs.existsSync(weeklyDir)) fs.mkdirSync(weeklyDir, { recursive: true });
+    fs.writeFileSync(path.join(weeklyDir, `${weekStart}-digest.md`), markdown);
+    task.logs.push({ type: 'info', time: new Date().toISOString(), text: `Obsidian 저장: WEEKLY/${weekStart}-digest.md` });
+  } catch (e) {
+    task.logs.push({ type: 'warn', time: new Date().toISOString(), text: `Obsidian 저장 실패: ${e.message}` });
+  }
+
+  updateTaskProgress(task, 95, '완료 처리 중...');
+
+  return { markdown, weekStart, weekEnd, stats: digest.stats };
+}
+
 // ============ Personal Assistant APIs ============
 
 // Claude 세션 찾기 헬퍼
@@ -2439,8 +2654,8 @@ function findSessions(targetDate, projectFilter) {
       const stat = fs.statSync(projectPath);
       if (!stat.isDirectory()) continue;
 
-      // memory 폴더 제외
-      if (dir === 'memory') continue;
+      // memory, .deleted 폴더 제외
+      if (dir === 'memory' || dir === '.deleted') continue;
 
       // 프로젝트 필터
       const projectName = dir.split('-').pop();
@@ -3112,6 +3327,7 @@ app.post('/api/ask', async (req, res) => {
   try {
     const claude = spawn(claudePath, ['-p', prompt], {
       env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
       timeout: timeout
     });
 
@@ -3182,20 +3398,39 @@ async function getGhAccounts() {
     child.stdout.on('data', d => out += d);
     child.on('close', () => {
       const accounts = [];
-      const matches = out.matchAll(/Logged in to (\S+) account (\S+)/g);
-      for (const m of matches) {
-        accounts.push({ host: m[1], username: m[2] });
+      const lines = out.split('\n');
+      let currentAccount = null;
+      for (const line of lines) {
+        const loginMatch = line.match(/Logged in to (\S+) account (\S+)/);
+        if (loginMatch) {
+          currentAccount = { host: loginMatch[1], username: loginMatch[2], active: false };
+          accounts.push(currentAccount);
+        }
+        if (currentAccount && /Active account:\s*true/i.test(line)) {
+          currentAccount.active = true;
+        }
       }
       resolve(accounts);
     });
   });
 }
 
+// 계정별 gh auth switch 후 API 호출
+async function ghExecAs(username, args, timeout = 15000) {
+  // 해당 계정으로 전환 후 실행
+  try {
+    await ghExec(['auth', 'switch', '--user', username], 5000);
+  } catch (e) {
+    // 이미 해당 계정이거나 전환 실패 시 그냥 진행
+  }
+  return ghExec(args, timeout);
+}
+
 async function fetchGithubEventsForAccount(username, targetDate) {
   const result = { username, commits: [], prs: [], reviews: [], comments: [] };
 
   try {
-    const raw = await ghExec([
+    const raw = await ghExecAs(username, [
       'api', `/users/${username}/events?per_page=100`,
       '--jq', `[.[] | select(.created_at | startswith("${targetDate}"))]`
     ]);
@@ -3343,10 +3578,16 @@ app.get('/api/github/activity', async (req, res) => {
     const accounts = await getGhAccounts();
     console.log(`[GitHub] ${accounts.length}개 계정 감지:`, accounts.map(a => a.username).join(', '));
 
-    // 모든 계정의 이벤트를 병렬로 수집
-    const results = await Promise.all(
-      accounts.map(a => fetchGithubEventsForAccount(a.username, targetDate))
-    );
+    // 계정별 순차 수집 (gh auth switch는 전역 상태이므로 병렬 불가)
+    const activeAccount = accounts.find(a => a.active)?.username;
+    const results = [];
+    for (const a of accounts) {
+      results.push(await fetchGithubEventsForAccount(a.username, targetDate));
+    }
+    // 원래 active 계정 복원
+    if (activeAccount) {
+      try { await ghExec(['auth', 'switch', '--user', activeAccount], 5000); } catch {}
+    }
 
     // 통합
     const activity = {
@@ -3486,9 +3727,18 @@ app.get('/api/timeline', async (req, res) => {
   // 6. GitHub 활동 (외부 API이므로 실패해도 나머지 반환)
   try {
     const accounts = await getGhAccounts();
-    const results = await Promise.allSettled(
-      accounts.map(a => fetchGithubEventsForAccount(a.username, date))
-    );
+    const activeAccount = accounts.find(a => a.active)?.username;
+    const results = [];
+    for (const a of accounts) {
+      try {
+        results.push({ status: 'fulfilled', value: await fetchGithubEventsForAccount(a.username, date) });
+      } catch (err) {
+        results.push({ status: 'rejected', reason: err });
+      }
+    }
+    if (activeAccount) {
+      try { await ghExec(['auth', 'switch', '--user', activeAccount], 5000); } catch {}
+    }
     for (const r of results) {
       if (r.status !== 'fulfilled') continue;
       const data = r.value;
@@ -3926,6 +4176,7 @@ ${JSON.stringify(sessionSummaries, null, 2)}
     const report = await new Promise((resolve, reject) => {
       const claude = spawn(claudePath, ['-p', prompt], {
         env: { ...process.env, NO_COLOR: '1' },
+        stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 120000
       });
 
@@ -4118,6 +4369,403 @@ process.on('uncaughtException', (err) => {
   console.error('  Error:', err.message);
   console.error('  Stack:', err.stack);
   // 서버를 멈추지 않음 (주의: 상태 불일치 가능)
+});
+
+// ============ Phase 2: AI 인사이트 & 분석 ============
+
+// --- 2.3 스마트 서제스션 ---
+function generateSuggestions() {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  const dayOfWeek = now.getDay(); // 0=일, 1=월 ... 6=토
+  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+  const suggestions = [];
+
+  try {
+    // 1. 메모 누락 (11시 이후, 오늘 메모 0개)
+    const todayMemos = loadQuickMemos().filter(m => m.timestamp?.startsWith(today));
+    let obsidianMemoCount = 0;
+    try { obsidianMemoCount = parseObsidianMemos(today).length; } catch (e) { /* ignore */ }
+    if (todayMemos.length === 0 && obsidianMemoCount === 0 && hour >= 11) {
+      suggestions.push({
+        id: 'nudge-memo',
+        type: 'nudge',
+        icon: '📝',
+        message: '오늘 아직 메모를 남기지 않으셨어요. 빠른 메모를 남겨보세요!',
+        action: { type: 'openQuickInput' },
+        priority: 'low'
+      });
+    }
+
+    // 2. 오래된 백로그 (7일+)
+    const backlogs = loadBacklogs().filter(b => !b.done);
+    const oldBacklogs = backlogs.filter(b => {
+      const created = new Date(b.createdAt);
+      return (Date.now() - created.getTime()) > 7 * 24 * 60 * 60 * 1000;
+    });
+    if (oldBacklogs.length > 0) {
+      suggestions.push({
+        id: 'reminder-backlog',
+        type: 'reminder',
+        icon: '📋',
+        message: `백로그에 ${oldBacklogs.length}개 항목이 1주일 넘게 대기중이에요`,
+        action: { type: 'showTab', tab: 'notes' },
+        priority: 'medium'
+      });
+    }
+
+    // 3. 모닝 플랜 미작성 (평일 10:30~12시)
+    if (isWeekday && ((hour === 10 && minute >= 30) || hour === 11)) {
+      const todayPlan = loadMorningPlans().find(p => p.date === today);
+      if (!todayPlan) {
+        suggestions.push({
+          id: 'nudge-morning',
+          type: 'nudge',
+          icon: '☀️',
+          message: '오늘의 계획을 아직 세우지 않으셨어요. 하루 시작을 해보세요!',
+          action: { type: 'openMorningStart' },
+          priority: 'medium'
+        });
+      }
+    }
+
+    // 4. 목표 달성 축하 (22:30 이후, 모닝 플랜이 있고 목표 있을 때)
+    if (hour >= 22 && minute >= 30) {
+      const todayPlan = loadMorningPlans().find(p => p.date === today);
+      if (todayPlan?.goals?.length > 0) {
+        suggestions.push({
+          id: 'achievement-day',
+          type: 'achievement',
+          icon: '🎯',
+          message: `오늘 하루 수고하셨어요! 목표 ${todayPlan.goals.length}개를 세우고 달려온 하루였습니다`,
+          action: null,
+          priority: 'info'
+        });
+      }
+    }
+
+    // 5. 오늘 실패한 작업 알림
+    const todayFailed = jobHistory.filter(h =>
+      h.startTime?.startsWith(today) && h.status === 'failed'
+    );
+    if (todayFailed.length > 0) {
+      const jobNames = [...new Set(todayFailed.map(h => h.jobName || h.jobId))].slice(0, 3).join(', ');
+      suggestions.push({
+        id: 'alert-failed',
+        type: 'reminder',
+        icon: '⚠️',
+        message: `오늘 실패한 작업이 ${todayFailed.length}개 있어요: ${jobNames}`,
+        action: { type: 'showTab', tab: 'jobs' },
+        priority: 'high'
+      });
+    }
+  } catch (e) {
+    console.error('[Suggestions] 생성 오류:', e.message);
+  }
+
+  return suggestions;
+}
+
+app.get('/api/insights/suggestions', (req, res) => {
+  const suggestions = generateSuggestions();
+  res.json({ suggestions });
+});
+
+// --- 2.2 생산성 분석 ---
+// 세션 벌크 조회 (디렉토리 1회 스캔, 날짜별 그룹핑, firstMessage 생략)
+// 60초 캐시로 기간 전환 시 재스캔 방지
+let _sessionBulkCache = null;
+let _sessionBulkCacheTime = 0;
+
+function findSessionsBulk(dateSet) {
+  const sessionsByDate = {};
+  for (const d of dateSet) sessionsByDate[d] = [];
+
+  // 캐시 확인 (60초 TTL)
+  const now = Date.now();
+  let allSessions = _sessionBulkCache;
+  if (!allSessions || now - _sessionBulkCacheTime > 60000) {
+    allSessions = [];
+    if (fs.existsSync(CLAUDE_PROJECTS)) {
+      try {
+        for (const dir of fs.readdirSync(CLAUDE_PROJECTS)) {
+          const projectPath = path.join(CLAUDE_PROJECTS, dir);
+          let stat;
+          try { stat = fs.statSync(projectPath); } catch { continue; }
+          if (!stat.isDirectory() || dir === 'memory' || dir === '.deleted') continue;
+          const projectName = dir.split('-').pop();
+
+          let files;
+          try { files = fs.readdirSync(projectPath).filter(f => f.endsWith('.jsonl')); } catch { continue; }
+          for (const file of files) {
+            try {
+              const fileStat = fs.statSync(path.join(projectPath, file));
+              allSessions.push({
+                project: projectName,
+                modifiedAt: fileStat.mtime.toISOString(),
+                date: fileStat.mtime.toISOString().split('T')[0]
+              });
+            } catch { /* skip */ }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    _sessionBulkCache = allSessions;
+    _sessionBulkCacheTime = now;
+  }
+
+  // 날짜별 필터링
+  for (const s of allSessions) {
+    if (sessionsByDate[s.date]) {
+      sessionsByDate[s.date].push({ project: s.project, modifiedAt: s.modifiedAt });
+    }
+  }
+  return sessionsByDate;
+}
+
+app.get('/api/insights/productivity', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 7;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days + 1);
+
+    const dates = [];
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    const dateSet = new Set(dates);
+
+    // 벌크 데이터 로드 (각각 1회만)
+    const sessionsByDate = findSessionsBulk(dateSet);
+
+    // 메모 날짜별 인덱스
+    const memosByDate = {};
+    for (const m of loadQuickMemos()) {
+      const d = m.timestamp?.split('T')[0];
+      if (d && dateSet.has(d)) {
+        if (!memosByDate[d]) memosByDate[d] = [];
+        memosByDate[d].push(m);
+      }
+    }
+
+    // Obsidian 메모 (날짜별 파일 읽기 - 경량 카운트 모드)
+    const obsidianByDate = {};
+    const { vaultPath: _vp, dailyFolder: _df } = getObsidianPaths();
+    for (const date of dates) {
+      try {
+        const notePath = path.join(_vp, _df, `${date}.md`);
+        if (!fs.existsSync(notePath)) { obsidianByDate[date] = []; continue; }
+        const content = fs.readFileSync(notePath, 'utf8');
+        const memos = [];
+        const hourlyMatch = content.match(/## ⏰ 시간별 메모\n([\s\S]*?)(?=\n## |$)/);
+        if (hourlyMatch) {
+          for (const line of hourlyMatch[1].trim().split('\n')) {
+            const m = line.match(/^- `((?:오[전후]|[AP]M)?\s*\d{1,2}:\d{2})`/);
+            if (m) {
+              const timeStr = m[1].trim();
+              const digits = timeStr.match(/(\d{1,2}):(\d{2})/);
+              let hour = parseInt(digits[1]);
+              if (/오후|PM/i.test(timeStr) && hour < 12) hour += 12;
+              if (/오전|AM/i.test(timeStr) && hour === 12) hour = 0;
+              memos.push({ timestamp: `${date}T${String(hour).padStart(2,'0')}:${digits[2]}:00` });
+            }
+          }
+        }
+        obsidianByDate[date] = memos;
+      } catch { obsidianByDate[date] = []; }
+    }
+
+    // 작업 이력 날짜별 인덱스
+    const jobsByDate = {};
+    for (const h of jobHistory) {
+      const d = h.startTime?.split('T')[0];
+      if (d && dateSet.has(d)) {
+        if (!jobsByDate[d]) jobsByDate[d] = [];
+        jobsByDate[d].push(h);
+      }
+    }
+
+    // 시간대별 활동 (24시간)
+    const hourlyActivity = Array.from({ length: 24 }, (_, i) => ({
+      hour: i, sessions: 0, memos: 0, jobs: 0
+    }));
+
+    const dailyTrend = [];
+    const projectMap = {};
+    let totalSessions = 0, totalMemos = 0, totalJobRuns = 0, totalSessionMinutes = 0;
+
+    for (const date of dates) {
+      let daySessions = 0, dayMemos = 0, dayJobs = 0;
+
+      // 세션
+      const sessions = sessionsByDate[date] || [];
+      daySessions = sessions.length;
+      totalSessions += sessions.length;
+      for (const s of sessions) {
+        const h = s.modifiedAt ? new Date(s.modifiedAt).getHours() : 12;
+        hourlyActivity[h].sessions++;
+        const proj = s.project || 'unknown';
+        if (!projectMap[proj]) projectMap[proj] = { sessions: 0, totalMinutes: 0 };
+        projectMap[proj].sessions++;
+        projectMap[proj].totalMinutes += 30;
+        totalSessionMinutes += 30;
+      }
+
+      // 대시보드 메모
+      const dashMemos = memosByDate[date] || [];
+      dayMemos += dashMemos.length;
+      totalMemos += dashMemos.length;
+      for (const m of dashMemos) {
+        const h = m.timestamp ? new Date(m.timestamp).getHours() : 12;
+        hourlyActivity[h].memos++;
+      }
+
+      // Obsidian 메모
+      const obsMemos = obsidianByDate[date] || [];
+      dayMemos += obsMemos.length;
+      totalMemos += obsMemos.length;
+      for (const m of obsMemos) {
+        const h = m.timestamp ? new Date(m.timestamp).getHours() : 12;
+        hourlyActivity[h].memos++;
+      }
+
+      // 작업 이력
+      const dayHistory = jobsByDate[date] || [];
+      dayJobs = dayHistory.length;
+      totalJobRuns += dayHistory.length;
+      for (const h of dayHistory) {
+        const hr = h.startTime ? new Date(h.startTime).getHours() : 12;
+        hourlyActivity[hr].jobs++;
+      }
+
+      dailyTrend.push({ date, sessions: daySessions, memos: dayMemos, jobs: dayJobs });
+    }
+
+    // 프로젝트 상위 5개
+    const topProjects = Object.entries(projectMap)
+      .map(([project, data]) => ({ project, ...data }))
+      .sort((a, b) => b.sessions - a.sessions)
+      .slice(0, 5);
+
+    // 기간 비교 (전반 vs 후반)
+    const mid = Math.floor(dailyTrend.length / 2);
+    const firstHalf = dailyTrend.slice(0, mid);
+    const secondHalf = dailyTrend.slice(mid);
+    const sum = (arr, key) => arr.reduce((s, d) => s + (d[key] || 0), 0);
+
+    const weekComparison = {
+      firstHalf: {
+        sessions: sum(firstHalf, 'sessions'),
+        memos: sum(firstHalf, 'memos'),
+        jobs: sum(firstHalf, 'jobs')
+      },
+      secondHalf: {
+        sessions: sum(secondHalf, 'sessions'),
+        memos: sum(secondHalf, 'memos'),
+        jobs: sum(secondHalf, 'jobs')
+      }
+    };
+
+    const avgDays = dates.length || 1;
+    res.json({
+      period: { start: dates[0], end: dates[dates.length - 1], days },
+      overview: {
+        totalSessions,
+        totalMemos,
+        totalJobRuns,
+        avgSessionMinutes: totalSessions > 0 ? Math.round(totalSessionMinutes / totalSessions) : 0,
+        avgDailyMemos: +(totalMemos / avgDays).toFixed(1)
+      },
+      hourlyActivity,
+      dailyTrend,
+      topProjects,
+      weekComparison
+    });
+  } catch (err) {
+    console.error('[Productivity] 분석 오류:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- 2.1 주간 다이제스트 ---
+const WEEKLY_DIGESTS_FILE = path.join(__dirname, 'data', 'weekly-digests.json');
+
+function loadWeeklyDigests() {
+  try {
+    if (fs.existsSync(WEEKLY_DIGESTS_FILE)) {
+      return JSON.parse(fs.readFileSync(WEEKLY_DIGESTS_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  return [];
+}
+
+function saveWeeklyDigests(digests) {
+  const dir = path.dirname(WEEKLY_DIGESTS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(WEEKLY_DIGESTS_FILE, JSON.stringify(digests, null, 2));
+}
+
+function getWeekStart(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay(); // 0=일
+  const diff = day === 0 ? 6 : day - 1; // 월요일 기준
+  d.setDate(d.getDate() - diff);
+  return d.toISOString().split('T')[0];
+}
+
+function getDateRange(start, end) {
+  const dates = [];
+  for (let d = new Date(start + 'T00:00:00'); d <= new Date(end + 'T00:00:00'); d.setDate(d.getDate() + 1)) {
+    dates.push(d.toISOString().split('T')[0]);
+  }
+  return dates;
+}
+
+// POST /api/insights/weekly-digest - 주간 다이제스트 생성 (비동기 태스크)
+app.post('/api/insights/weekly-digest', (req, res) => {
+  const { weekStart, clientId } = req.body || {};
+
+  const task = {
+    id: generateTaskId(),
+    type: 'weekly-digest',
+    payload: { weekStart },
+    status: 'pending',
+    progress: 0,
+    progressMessage: '대기 중...',
+    result: null,
+    error: null,
+    stdout: '',
+    stderr: '',
+    logs: [],
+    command: null,
+    createdAt: new Date().toISOString(),
+    startedAt: null,
+    completedAt: null,
+    clientId
+  };
+
+  taskQueue.set(task.id, task);
+  console.log(`[Tasks] 주간 다이제스트 작업 생성: ${task.id}`);
+  processTask(task);
+
+  res.json({ taskId: task.id });
+});
+
+// GET /api/insights/weekly-digest - 저장된 다이제스트 조회
+app.get('/api/insights/weekly-digest', (req, res) => {
+  const week = req.query.week;
+  const digests = loadWeeklyDigests();
+
+  if (week) {
+    const digest = digests.find(d => d.weekStart === week);
+    return res.json({ digest: digest || null });
+  }
+
+  // 최근 10개
+  res.json({ digests: digests.slice(-10).reverse() });
 });
 
 // Graceful shutdown
