@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>빠른 입력</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: transparent;
+      overflow: hidden;
+      -webkit-app-region: drag;
+    }
+
+    .container {
+      background: linear-gradient(145deg, rgba(102, 126, 234, 0.95), rgba(118, 75, 162, 0.95));
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      -webkit-app-region: no-drag;
+    }
+
+    .character {
+      width: 48px;
+      height: 48px;
+      background: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .greeting {
+      color: white;
+      font-size: 16px;
+      font-weight: 500;
+    }
+
+    .input-area {
+      -webkit-app-region: no-drag;
+    }
+
+    .input-wrapper {
+      background: white;
+      border-radius: 12px;
+      padding: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    #input {
+      width: 100%;
+      border: none;
+      padding: 12px 16px;
+      font-size: 15px;
+      border-radius: 10px;
+      resize: none;
+      outline: none;
+      min-height: 60px;
+      font-family: inherit;
+    }
+
+    #input::placeholder {
+      color: #999;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      -webkit-app-region: no-drag;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-primary {
+      background: white;
+      color: #667eea;
+    }
+
+    .btn-primary:hover {
+      background: #f0f0f0;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      color: white;
+      padding: 20px;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .loading .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .success {
+      display: none;
+      text-align: center;
+      color: white;
+      padding: 20px;
+    }
+
+    .success.active {
+      display: block;
+    }
+
+    .success .icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* 키보드 힌트 */
+    .hint {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 11px;
+      text-align: center;
+      margin-top: 12px;
+    }
+
+    kbd {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="character" id="character">🤖</div>
+      <div class="greeting" id="greeting">무엇을 도와드릴까요?</div>
+    </div>
+
+    <div class="input-area" id="inputArea">
+      <div class="input-wrapper">
+        <textarea
+          id="input"
+          placeholder="지금 하고 있는 일, 생각, 질문 등..."
+          autofocus
+        ></textarea>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="btnRecord" title="기록하기">
+          📝 기록
+        </button>
+        <button class="btn btn-secondary" id="btnAsk" title="Claude에게 질문">
+          🤖 질문
+        </button>
+        <button class="btn btn-secondary" id="btnSummary" title="오늘 요약">
+          📊 요약
+        </button>
+      </div>
+
+      <div class="hint">
+        <kbd>Enter</kbd> 기록 &nbsp;|&nbsp; <kbd>Esc</kbd> 닫기
+      </div>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div>처리 중...</div>
+    </div>
+
+    <div class="success" id="success">
+      <div class="icon" id="successIcon">✨</div>
+      <div id="successMessage">기록 완료!</div>
+      <button class="btn btn-secondary" id="btnBack" style="margin-top: 16px; -webkit-app-region: no-drag;">← 돌아가기</button>
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById('input');
+    const inputArea = document.getElementById('inputArea');
+    const loading = document.getElementById('loading');
+    const success = document.getElementById('success');
+    const successMessage = document.getElementById('successMessage');
+    const character = document.getElementById('character');
+    const greeting = document.getElementById('greeting');
+
+    const greetings = [
+      '무엇을 도와드릴까요?',
+      '오늘 하루 어때요?',
+      '지금 뭐 하고 있어요?',
+      '간단히 메모해볼까요?'
+    ];
+
+    // 랜덤 인사말
+    greeting.textContent = greetings[Math.floor(Math.random() * greetings.length)];
+
+    // 상태 표시
+    function showLoading() {
+      inputArea.classList.add('hidden');
+      loading.classList.add('active');
+      success.classList.remove('active');
+    }
+
+    function showSuccess(message, autoClose = true) {
+      inputArea.classList.add('hidden');
+      loading.classList.remove('active');
+      success.classList.add('active');
+      successMessage.textContent = message;
+      character.textContent = '😊'; // smile
+
+      // 자동 닫기 (선택적)
+      if (autoClose) {
+        setTimeout(() => {
+          if (window.electronAPI) {
+            window.electronAPI.hideWindow();
+          }
+        }, 1500);
+      }
+    }
+
+    function showError(message) {
+      alert(message);
+      inputArea.classList.remove('hidden');
+      loading.classList.remove('active');
+    }
+
+    function resetUI() {
+      inputArea.classList.remove('hidden');
+      loading.classList.remove('active');
+      success.classList.remove('active');
+      input.value = '';
+      input.focus();
+    }
+
+    // 기록하기
+    async function saveRecord() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      showLoading();
+
+      try {
+        if (window.electronAPI) {
+          const result = await window.electronAPI.saveEntry(text, 'quick');
+          if (result.success) {
+            showSuccess('기록 완료! ✨');
+          } else {
+            showError('저장 실패: ' + result.error);
+          }
+        } else {
+          // 테스트용
+          setTimeout(() => showSuccess('기록 완료! &#10024;'), 500);
+        }
+      } catch (error) {
+        showError('오류: ' + error.message);
+      }
+    }
+
+    // Claude에게 질문
+    async function askClaude() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      showLoading();
+
+      try {
+        if (window.electronAPI) {
+          // Electron 환경
+          const result = await window.electronAPI.askClaude(text);
+          if (result.success) {
+            navigator.clipboard.writeText(result.response);
+            showSuccess('응답이 클립보드에 복사되었어요!');
+          } else {
+            showError('질문 실패: ' + result.error);
+          }
+        } else {
+          // 웹 환경 - 서버 API 호출
+          const res = await fetch('/api/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: text })
+          });
+          const result = await res.json();
+          if (result.success) {
+            showResponse(result.response);
+          } else {
+            showError('질문 실패: ' + result.error);
+          }
+        }
+      } catch (error) {
+        showError('오류: ' + error.message);
+      }
+    }
+
+    // Claude 응답 표시
+    function showResponse(response) {
+      inputArea.classList.add('hidden');
+      loading.classList.remove('active');
+      success.classList.remove('active');
+      character.textContent = '😊';
+
+      // 기존 응답 영역 제거
+      const existingResponse = document.getElementById('responseArea');
+      if (existingResponse) existingResponse.remove();
+
+      // 응답 표시 영역 생성
+      const responseArea = document.createElement('div');
+      responseArea.id = 'responseArea';
+      responseArea.innerHTML = `
+        <div style="background: rgba(255,255,255,0.95); border-radius: 12px; padding: 16px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; -webkit-app-region: no-drag;">
+          <pre style="white-space: pre-wrap; word-break: break-word; font-size: 13px; color: #333; font-family: inherit; margin: 0;">${escapeHtml(response)}</pre>
+        </div>
+        <div style="display: flex; gap: 8px; -webkit-app-region: no-drag;">
+          <button class="btn btn-primary" onclick="copyToClipboard('${escapeHtml(response).replace(/'/g, "\\'")}')">📋 복사</button>
+          <button class="btn btn-secondary" onclick="resetFromResponse()">← 돌아가기</button>
+        </div>
+      `;
+      document.querySelector('.container').appendChild(responseArea);
+    }
+
+    // HTML 이스케이프
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // 클립보드 복사
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        showSuccess('클립보드에 복사되었어요!', false);
+        setTimeout(resetFromResponse, 1500);
+      });
+    }
+
+    // 응답 화면에서 돌아가기
+    function resetFromResponse() {
+      const responseArea = document.getElementById('responseArea');
+      if (responseArea) responseArea.remove();
+      resetUI();
+    }
+
+    // 오늘 요약
+    async function showTodaySummary() {
+      showLoading();
+
+      try {
+        if (window.electronAPI) {
+          const entries = await window.electronAPI.getTodayEntries();
+          if (entries.length === 0) {
+            document.getElementById('successIcon').textContent = '📭';
+            showSuccess('오늘 기록이 없어요', false); // 자동 닫힘 비활성화
+          } else {
+            // 기록 목록 표시
+            showEntriesList(entries);
+          }
+        }
+      } catch (error) {
+        showError('오류: ' + error.message);
+      }
+    }
+
+    // 기록 목록 표시
+    function showEntriesList(entries) {
+      inputArea.classList.add('hidden');
+      loading.classList.remove('active');
+      success.classList.remove('active');
+
+      // 기록 목록 HTML 생성
+      let html = '<div class="entries-list" style="max-height: 200px; overflow-y: auto; background: rgba(255,255,255,0.95); border-radius: 12px; padding: 12px; margin-bottom: 12px; -webkit-app-region: no-drag;">';
+      html += '<h4 style="color: #667eea; margin-bottom: 8px; font-size: 14px;">📋 오늘의 기록 (' + entries.length + '개)</h4>';
+
+      entries.forEach(e => {
+        const time = new Date(e.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+        html += '<div style="padding: 6px 0; border-bottom: 1px solid #eee; font-size: 13px; color: #333;">';
+        html += '<span style="color: #999; margin-right: 8px;">' + time + '</span>' + (e.text || e.raw || '');
+        html += '</div>';
+      });
+
+      html += '</div>';
+      html += '<button class="btn btn-secondary" id="btnBackFromList" style="-webkit-app-region: no-drag;">← 돌아가기</button>';
+
+      // 컨테이너에 추가
+      const container = document.querySelector('.container');
+      const entriesDiv = document.createElement('div');
+      entriesDiv.id = 'entriesView';
+      entriesDiv.innerHTML = html;
+      container.appendChild(entriesDiv);
+
+      document.getElementById('btnBackFromList').addEventListener('click', () => {
+        entriesDiv.remove();
+        resetUI();
+      });
+    }
+
+    // 버튼 이벤트
+    document.getElementById('btnRecord').addEventListener('click', saveRecord);
+    document.getElementById('btnAsk').addEventListener('click', askClaude);
+    document.getElementById('btnSummary').addEventListener('click', showTodaySummary);
+    document.getElementById('btnBack').addEventListener('click', () => {
+      document.getElementById('successIcon').textContent = '✨';
+      resetUI();
+    });
+
+    // 키보드 이벤트
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        saveRecord();
+      } else if (e.key === 'Escape') {
+        if (window.electronAPI) {
+          window.electronAPI.hideWindow();
+        }
+      }
+    });
+
+    // 포커스
+    input.focus();
+  </script>
+</body>
+</html>

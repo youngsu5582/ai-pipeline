@@ -42,6 +42,14 @@ env/
 *~
 .DS_Store
 
+# ===== Node.js =====
+node_modules/
+
+# ===== Dashboard runtime =====
+dashboard/.pid
+dashboard/data/
+dashboard/logs/
+
 # ===== Logs & Data =====
 *.log
 logs/

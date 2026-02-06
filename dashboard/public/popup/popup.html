@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 비서</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container" id="container">
+    <!-- 헤더: 캐릭터 + 질문 -->
+    <div class="header">
+      <div class="character-wrapper">
+        <div class="character" id="character">🤖</div>
+      </div>
+      <div class="bubble">
+        <p class="question" id="question">지금 뭐 하고 있어요?</p>
+      </div>
+    </div>
+
+    <!-- 입력 영역: textarea -->
+    <div class="input-area" id="inputTextarea">
+      <textarea
+        id="textInput"
+        placeholder="간단히 적어주세요..."
+      ></textarea>
+    </div>
+
+    <!-- 입력 영역: quick-buttons -->
+    <div class="input-area hidden" id="inputButtons">
+      <div class="quick-buttons" id="quickButtons">
+        <!-- 동적 생성 -->
+      </div>
+    </div>
+
+    <!-- 입력 영역: review (수집된 데이터 표시) -->
+    <div class="input-area hidden" id="inputReview">
+      <div class="review-section">
+        <h4>📋 오늘 기록</h4>
+        <ul class="review-list" id="entriesList">
+          <!-- 동적 생성 -->
+        </ul>
+      </div>
+      <div class="review-section">
+        <h4>🤖 Claude 세션</h4>
+        <ul class="review-list" id="sessionsList">
+          <!-- 동적 생성 -->
+        </ul>
+      </div>
+      <textarea
+        id="reviewInput"
+        placeholder="추가할 내용이 있으면 적어주세요..."
+      ></textarea>
+    </div>
+
+    <!-- 액션 버튼 -->
+    <div class="actions">
+      <button class="btn btn-primary" id="btnSubmit">
+        📝 기록하기
+      </button>
+      <button class="btn btn-secondary" id="btnSkip">
+        나중에
+      </button>
+    </div>
+
+    <!-- 로딩 -->
+    <div class="loading hidden" id="loading">
+      <div class="spinner"></div>
+      <p>처리 중...</p>
+    </div>
+
+    <!-- 성공 -->
+    <div class="success hidden" id="success">
+      <div class="success-icon">✨</div>
+      <p id="successMessage">고마워요!</p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

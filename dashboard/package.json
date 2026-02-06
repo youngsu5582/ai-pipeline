@@ -1,0 +1,23 @@
+{
+  "name": "memobot",
+  "productName": "MemoBot",
+  "version": "2.0.0",
+  "description": "AI Pipeline Cron 작업 관리 대시보드 + 개인 비서",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "web": "node server.js",
+    "web:dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "cors": "^2.8.5",
+    "electron-store": "^8.1.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0"
+  }
+}
