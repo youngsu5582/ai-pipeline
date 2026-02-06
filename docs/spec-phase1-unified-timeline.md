@@ -11,21 +11,22 @@
 
 ---
 
-## 1.1 통합 타임라인 뷰
+## 1.1 통합 타임라인 뷰 (구현 완료)
 
 ### 데이터 소스 & 통합 방식
 
-| 소스 | API | 데이터 형태 |
-|------|-----|-------------|
-| 작업 실행 | `GET /api/history` | `{ jobName, status, startTime, duration }` |
-| Claude 세션 | `GET /api/sessions` | `{ project, startTime, messageCount, alias }` |
-| 빠른 메모 | `GET /api/quick-memos` | `{ content, timestamp }` |
-| Obsidian 메모 | `GET /api/obsidian/daily-memos` | `{ content, time }` |
-| GitHub 활동 | `GET /api/github/activity` | `{ commits[], prs[], reviews[] }` |
-| 모닝 플랜 | `GET /api/morning-plan` | `{ markdown, createdAt }` |
-| 백로그 변경 | `GET /api/backlogs` | `{ content, createdAt, done }` |
+| 소스 | 서버 함수 | 타임라인 type |
+|------|-----------|---------------|
+| 작업 실행 | `jobHistory` (전역 변수) | `job` |
+| Claude 세션 | `findSessions(date)` | `session` |
+| 빠른 메모 | `loadQuickMemos()` | `memo` (source: dashboard) |
+| Obsidian 메모 | `parseObsidianMemos(date)` | `memo` (source: obsidian) |
+| GitHub 활동 | `getGhAccounts()` + `fetchGithubEventsForAccount()` | `github` |
+| 모닝 플랜 | `loadMorningPlans()` | `plan` |
 
-### 새 API: `GET /api/timeline`
+> 참고: `parseObsidianMemos(date)`는 기존 `/api/obsidian/daily-memos` 인라인 로직에서 헬퍼 함수로 추출됨. GitHub는 `Promise.allSettled`로 호출하여 실패 시에도 나머지 데이터 정상 반환.
+
+### API: `GET /api/timeline`
 
 ```
 GET /api/timeline?date=2026-02-06
@@ -37,250 +38,111 @@ GET /api/timeline?date=2026-02-06
   "date": "2026-02-06",
   "items": [
     {
-      "id": "tl-1",
-      "type": "session",
-      "time": "2026-02-06T09:00:00Z",
-      "title": "ai-pipeline 세션",
-      "subtitle": "45분 / 메시지 32개",
-      "icon": "session",
-      "color": "purple",
-      "meta": { "sessionId": "abc123", "project": "ai-pipeline" }
+      "id": "job-1770340800544",
+      "type": "job",
+      "time": "2026-02-06T01:20:00.544Z",
+      "title": "PR 리뷰 알림",
+      "subtitle": "성공 (0.5s)",
+      "icon": "job-success",
+      "color": "green",
+      "meta": { "jobId": "pr-review-reminder", "status": "success", "logId": 1770340800544 }
     },
     {
-      "id": "tl-2",
+      "id": "session-704c131d-...",
+      "type": "session",
+      "time": "2026-02-06T01:12:35.675Z",
+      "title": "dashboard",
+      "subtitle": "첫 메시지 미리보기...",
+      "icon": "session",
+      "color": "purple",
+      "meta": { "sessionId": "704c131d-...", "projectPath": "-Users-iyeongsu-ai-pipeline-dashboard" }
+    },
+    {
+      "id": "memo-memo-123",
       "type": "memo",
       "time": "2026-02-06T09:30:00Z",
       "title": "ECS graceful shutdown 확인중",
       "icon": "memo",
       "color": "yellow",
-      "meta": { "source": "obsidian" }
+      "meta": { "source": "dashboard", "memoId": "memo-123" }
     },
     {
-      "id": "tl-3",
-      "type": "job",
-      "time": "2026-02-06T10:00:00Z",
-      "title": "GitHub 동기화",
-      "subtitle": "성공 (3.2s)",
-      "icon": "job-success",
-      "color": "green",
-      "meta": { "jobId": "sync-github", "status": "success" }
-    },
-    {
-      "id": "tl-4",
+      "id": "gh-pr-repo-123",
       "type": "github",
       "time": "2026-02-06T11:00:00Z",
-      "title": "PR #2380 - PROJECT-KEY-496 클라이언트 키 그룹 추가",
-      "subtitle": "org-user / aicreation",
+      "title": "PR #2380 PROJECT-KEY-496 클라이언트 키 그룹 추가",
+      "subtitle": "org-user / aicreation / opened",
       "icon": "github-pr",
       "color": "blue",
-      "meta": { "url": "https://github.com/...", "repo": "aicreation" }
+      "meta": { "url": "https://github.com/...", "repo": "org/aicreation" }
+    },
+    {
+      "id": "plan-mp-123",
+      "type": "plan",
+      "time": "2026-02-06T01:45:45.559Z",
+      "title": "하루 시작 계획",
+      "subtitle": "목표 3개 / 업무 12개",
+      "icon": "plan",
+      "color": "orange",
+      "meta": { "planId": "mp-123" }
     }
   ],
   "summary": {
     "sessions": 3,
     "memos": 5,
     "jobRuns": 12,
-    "commits": 4,
-    "prs": 2
+    "github": 2,
+    "plans": 1
   }
 }
-```
-
-### 서버 구현 (server.js)
-
-```javascript
-// GET /api/timeline
-app.get('/api/timeline', async (req, res) => {
-  const date = req.query.date || new Date().toISOString().split('T')[0];
-  const items = [];
-
-  // 1. 작업 이력
-  const history = loadHistory();
-  history.filter(h => h.startTime?.startsWith(date)).forEach(h => {
-    items.push({
-      id: `job-${h.id}`,
-      type: 'job',
-      time: h.startTime,
-      title: h.jobName || h.jobId,
-      subtitle: `${h.status === 'success' ? '성공' : '실패'} (${(h.duration/1000).toFixed(1)}s)`,
-      icon: h.status === 'success' ? 'job-success' : 'job-failed',
-      color: h.status === 'success' ? 'green' : 'red',
-      meta: { jobId: h.jobId, status: h.status, logId: h.id }
-    });
-  });
-
-  // 2. 세션 (sessionDir 스캔)
-  const sessions = await collectSessions(date);
-  sessions.forEach(s => {
-    items.push({
-      id: `session-${s.id}`,
-      type: 'session',
-      time: s.startTime,
-      title: s.alias || s.project,
-      subtitle: s.alias ? `${s.project} / ${s.messageCount}개 메시지` : `${s.messageCount}개 메시지`,
-      icon: 'session',
-      color: 'purple',
-      meta: { sessionId: s.id, project: s.project }
-    });
-  });
-
-  // 3. 메모 (대시보드 + Obsidian)
-  const dashMemos = loadQuickMemos().filter(m => m.timestamp?.startsWith(date));
-  dashMemos.forEach(m => {
-    items.push({
-      id: `memo-${m.id}`,
-      type: 'memo',
-      time: m.timestamp,
-      title: m.content?.substring(0, 100),
-      icon: 'memo',
-      color: 'yellow',
-      meta: { source: 'dashboard', memoId: m.id }
-    });
-  });
-
-  // Obsidian 메모
-  const obsidianMemos = parseObsidianDailyMemos(date);
-  obsidianMemos.forEach(m => {
-    items.push({
-      id: m.id,
-      type: 'memo',
-      time: m.timestamp,
-      title: m.content?.substring(0, 100),
-      icon: 'memo-obsidian',
-      color: 'green',
-      meta: { source: 'obsidian' }
-    });
-  });
-
-  // 4. 모닝 플랜
-  const plans = loadMorningPlans();
-  const todayPlan = plans.find(p => p.date === date);
-  if (todayPlan) {
-    items.push({
-      id: `plan-${todayPlan.id}`,
-      type: 'plan',
-      time: todayPlan.createdAt,
-      title: '하루 시작 계획',
-      subtitle: `목표 ${todayPlan.goals?.length || 0}개 / 업무 ${todayPlan.tasks?.length || 0}개`,
-      icon: 'plan',
-      color: 'orange',
-      meta: { planId: todayPlan.id }
-    });
-  }
-
-  // 시간순 정렬
-  items.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-
-  // 요약
-  const summary = {
-    sessions: items.filter(i => i.type === 'session').length,
-    memos: items.filter(i => i.type === 'memo').length,
-    jobRuns: items.filter(i => i.type === 'job').length,
-    plans: items.filter(i => i.type === 'plan').length
-  };
-
-  res.json({ date, items, summary });
-});
 ```
 
 ### 프론트엔드 UI (index.html 홈 탭)
 
-기존 홈 대시보드의 "최근 실행" + "최근 메모" 2열 레이아웃 아래에 타임라인 추가:
+빠른 액션 버튼과 2열 레이아웃(최근 실행/메모) **사이**에 타임라인 배치:
 
-```html
-<!-- 타임라인 영역 -->
-<div class="mt-6">
-  <div class="flex items-center justify-between mb-4">
-    <h3 class="text-sm font-bold text-gray-300">📅 오늘의 타임라인</h3>
-    <span id="homeTimelineCount" class="text-xs text-gray-500"></span>
-  </div>
-  <div id="homeTimeline" class="relative pl-6 border-l-2 border-gray-700 space-y-4">
-    <!-- 타임라인 항목들 -->
-  </div>
-</div>
+```
+[4칸 요약 카드]
+[빠른 액션 3개]
+[통합 타임라인]  ← 여기
+[최근 실행 | 최근 메모]
 ```
 
-**타임라인 아이템 렌더링:**
-```javascript
-function renderTimelineItem(item) {
-  const colors = {
-    green: 'bg-green-500', red: 'bg-red-500', purple: 'bg-purple-500',
-    yellow: 'bg-yellow-500', blue: 'bg-blue-500', orange: 'bg-orange-500'
-  };
-  const icons = {
-    session: '🤖', memo: '📝', 'memo-obsidian': '📓',
-    'job-success': '✅', 'job-failed': '❌',
-    'github-pr': '🔀', 'github-commit': '📦',
-    plan: '☀️'
-  };
-  const time = new Date(item.time).toLocaleTimeString('ko-KR', {
-    hour: '2-digit', minute: '2-digit'
-  });
-
-  return `
-    <div class="relative flex items-start gap-3 group cursor-pointer hover:bg-gray-800/30 p-2 -ml-2 rounded-lg transition-colors"
-         onclick="handleTimelineClick('${item.type}', ${JSON.stringify(item.meta).replace(/"/g, '&quot;')})">
-      <!-- 타임라인 도트 -->
-      <div class="absolute -left-[25px] w-3 h-3 rounded-full ${colors[item.color]} border-2 border-gray-900 mt-1.5"></div>
-      <!-- 시간 -->
-      <span class="text-xs text-gray-600 w-14 flex-shrink-0 mt-0.5">${time}</span>
-      <!-- 아이콘 -->
-      <span class="flex-shrink-0">${icons[item.icon] || '📌'}</span>
-      <!-- 내용 -->
-      <div class="flex-1 min-w-0">
-        <div class="text-sm text-gray-300 truncate">${escapeHtml(item.title)}</div>
-        ${item.subtitle ? `<div class="text-xs text-gray-600">${escapeHtml(item.subtitle)}</div>` : ''}
-      </div>
-    </div>
-  `;
-}
-```
-
-**시간대별 그룹핑:**
-```javascript
-function groupTimelineByPeriod(items) {
-  const groups = { morning: [], afternoon: [], evening: [] };
-  items.forEach(item => {
-    const hour = new Date(item.time).getHours();
-    if (hour < 12) groups.morning.push(item);
-    else if (hour < 18) groups.afternoon.push(item);
-    else groups.evening.push(item);
-  });
-  return groups;
-}
-```
+**UI 구성요소:**
+- **접기/펼치기**: 헤더 클릭으로 타임라인 본문 토글 (화살표 아이콘 회전)
+- **타입 필터**: 작업/세션/메모/GitHub/플랜 chip 버튼 (토글, opacity로 비활성 표시)
+- **시간 범위 슬라이더**: 0~24시 듀얼 핸들 드래그 (0.5시간 단위 스냅)
+  - 데이터 로드 시 실제 활동 시간 범위로 자동 설정
+  - 트랙 클릭으로 가까운 핸들 이동
+- **시간대별 그루핑**: 오전(~12시) / 오후(12~18시) / 저녁(18시~) 섹션
+- **타임라인 아이템**: 세로 라인 + 컬러 도트 + 시간 + 아이콘 + 제목/부제목
 
 ### 클릭 핸들러 (타임라인 → 상세 보기)
 
-```javascript
-function handleTimelineClick(type, meta) {
-  switch (type) {
-    case 'session':
-      showTab('sessions');
-      // 해당 세션 상세 열기
-      setTimeout(() => showSessionDetail(meta.sessionId), 100);
-      break;
-    case 'job':
-      showTab('jobs');
-      showJobSubTab('history');
-      setTimeout(() => showLogById(meta.logId), 100);
-      break;
-    case 'memo':
-      showTab('notes');
-      break;
-    case 'plan':
-      openMorningStart(); // 편집 모드로 열기
-      break;
-    case 'github':
-      if (meta.url) window.open(meta.url, '_blank');
-      break;
-  }
-}
-```
+| type | 동작 |
+|------|------|
+| `session` | `showTab('sessions')` → `showSessionDetail(sessionId, projectPath)` |
+| `job` | `showTab('jobs')` → `showJobSubTab('history')` → `showLogById(logId)` |
+| `memo` | `showTab('notes')` |
+| `plan` | `openMorningStart()` |
+| `github` | `window.open(meta.url, '_blank')` |
+
+### 주요 함수 (index.html)
+
+| 함수 | 역할 |
+|------|------|
+| `loadTimeline()` | API fetch + 초기 시간 범위 설정 + 렌더링 |
+| `renderTimeline()` | 필터/시간범위 적용 → 시간대별 그루핑 → HTML 생성 |
+| `renderTimelineItem(item)` | 개별 아이템 HTML |
+| `handleTimelineClick(type, meta)` | 클릭 시 상세 네비게이션 |
+| `toggleTimelineFilter(type)` | 타입 필터 토글 |
+| `toggleTimelineCollapse()` | 접기/펼치기 |
+| `initTimeRangeSlider()` | 듀얼 핸들 드래그 이벤트 초기화 |
+| `updateTimeRangeUI()` | 슬라이더 핸들/활성바/라벨 업데이트 |
 
 ---
 
-## 1.2 통합 검색 (Global Search)
+## 1.2 통합 검색 (Global Search) — 미구현
 
 ### UI: Cmd+K 검색 모달
 
@@ -335,74 +197,6 @@ GET /api/search?q=graceful+shutdown&types=session,memo,job
 }
 ```
 
-### 서버 구현
-
-```javascript
-app.get('/api/search', (req, res) => {
-  const { q, types } = req.query;
-  if (!q || q.length < 2) return res.json({ results: [], total: 0 });
-
-  const query = q.toLowerCase();
-  const allowedTypes = types ? types.split(',') : ['session', 'memo', 'job', 'backlog'];
-  const results = [];
-
-  // 메모 검색
-  if (allowedTypes.includes('memo')) {
-    const memos = loadQuickMemos();
-    memos.filter(m => m.content?.toLowerCase().includes(query)).forEach(m => {
-      results.push({
-        type: 'memo', id: m.id,
-        title: m.content.substring(0, 60),
-        preview: m.content.substring(0, 120),
-        date: m.timestamp?.split('T')[0],
-        time: m.timestamp
-      });
-    });
-  }
-
-  // 세션 검색 (프로젝트명, alias)
-  if (allowedTypes.includes('session')) {
-    // 세션 목록에서 alias/project로 검색
-  }
-
-  // 작업 이력 검색
-  if (allowedTypes.includes('job')) {
-    const history = loadHistory();
-    history.filter(h =>
-      h.jobName?.toLowerCase().includes(query) ||
-      h.stdout?.toLowerCase().includes(query)
-    ).forEach(h => {
-      results.push({
-        type: 'job', id: h.id,
-        title: h.jobName,
-        preview: h.stdout?.substring(0, 120),
-        date: h.startTime?.split('T')[0],
-        time: h.startTime
-      });
-    });
-  }
-
-  // 백로그 검색
-  if (allowedTypes.includes('backlog')) {
-    const backlogs = loadBacklogs();
-    backlogs.filter(b => b.content?.toLowerCase().includes(query)).forEach(b => {
-      results.push({
-        type: 'backlog', id: b.id,
-        title: b.content.substring(0, 60),
-        preview: b.content.substring(0, 120),
-        date: b.createdAt?.split('T')[0],
-        time: b.createdAt
-      });
-    });
-  }
-
-  // 최신순 정렬
-  results.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
-
-  res.json({ results: results.slice(0, 20), total: results.length });
-});
-```
-
 ### 키보드 단축키
 
 ```javascript
@@ -417,7 +211,7 @@ document.addEventListener('keydown', (e) => {
 
 ---
 
-## 1.3 날짜 네비게이션 통합
+## 1.3 날짜 네비게이션 통합 — 미구현
 
 홈 대시보드의 기존 요약 카드 위에 날짜 선택기 추가 (노트 탭의 패턴 재사용):
 
@@ -441,11 +235,19 @@ document.addEventListener('keydown', (e) => {
 
 ## 검증 방법
 
+### 1.1 통합 타임라인 (구현 완료)
 1. `npm run dev` 서버 시작
 2. http://localhost:3030 접속 → 홈 탭에 타임라인 표시 확인
 3. 타임라인 항목 클릭 → 해당 상세 보기로 이동 확인
-4. Cmd+K → 검색 모달 열림 확인
-5. 검색어 입력 → 결과 표시 + 클릭으로 이동 확인
-6. 날짜 변경 → 해당 날짜 타임라인 로드 확인
-7. `curl http://localhost:3030/api/timeline?date=2026-02-06 | jq` 로 API 응답 확인
-8. `curl "http://localhost:3030/api/search?q=graceful" | jq` 로 검색 API 확인
+4. 타입 필터 chip 토글 → 항목 필터링 확인
+5. 시간 범위 슬라이더 드래그 → 해당 시간대 항목만 표시 확인
+6. 타임라인 헤더 클릭 → 접기/펼치기 확인
+7. `curl "http://localhost:3030/api/timeline?date=2026-02-06" | jq` 로 API 응답 확인
+
+### 1.2 통합 검색 (미구현)
+- Cmd+K → 검색 모달 열림 확인
+- 검색어 입력 → 결과 표시 + 클릭으로 이동 확인
+- `curl "http://localhost:3030/api/search?q=graceful" | jq` 로 검색 API 확인
+
+### 1.3 날짜 네비게이션 (미구현)
+- 날짜 변경 → 해당 날짜 타임라인 로드 확인

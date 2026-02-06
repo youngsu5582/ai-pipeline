@@ -2954,12 +2954,8 @@ app.delete('/api/backlogs/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// GET /api/obsidian/daily-memos - Obsidian Daily Note 메모 조회
-app.get('/api/obsidian/daily-memos', (req, res) => {
-  const { date } = req.query;
-  const targetDate = date || new Date().toISOString().split('T')[0];
-
-  // 설정 파일에서 vault 경로 읽기
+// Obsidian Daily Note 메모 파싱 헬퍼
+function parseObsidianMemos(targetDate) {
   const yaml = require('js-yaml');
   const configPaths = [
     path.join(__dirname, '../config/settings.local.yaml'),
@@ -2986,53 +2982,53 @@ app.get('/api/obsidian/daily-memos', (req, res) => {
   }
 
   const dailyNotePath = path.join(vaultPath, dailyFolder, `${targetDate}.md`);
+  if (!fs.existsSync(dailyNotePath)) return [];
 
-  if (!fs.existsSync(dailyNotePath)) {
-    return res.json({ memos: [], source: 'obsidian', date: targetDate });
+  const content = fs.readFileSync(dailyNotePath, 'utf8');
+  const memos = [];
+
+  const hourlyMatch = content.match(/## ⏰ 시간별 메모\n([\s\S]*?)(?=\n## |$)/);
+  if (hourlyMatch) {
+    const lines = hourlyMatch[1].trim().split('\n');
+    let currentMemo = null;
+
+    for (const line of lines) {
+      const match = line.match(/^- `((?:오[전후]|[AP]M)?\s*\d{1,2}:\d{2})`\s*(.*)$/);
+      if (match) {
+        if (currentMemo) memos.push(currentMemo);
+
+        const timeStr = match[1].trim();
+        const timeDigits = timeStr.match(/(\d{1,2}):(\d{2})/);
+        let hour = parseInt(timeDigits[1]);
+        const min = timeDigits[2];
+        if (/오후|PM/i.test(timeStr) && hour < 12) hour += 12;
+        if (/오전|AM/i.test(timeStr) && hour === 12) hour = 0;
+        const normalizedTime = `${String(hour).padStart(2, '0')}:${min}`;
+
+        currentMemo = {
+          id: `obsidian-${targetDate}-${normalizedTime}-${memos.length}`,
+          time: timeStr,
+          content: (match[2] || '').trim(),
+          timestamp: `${targetDate}T${normalizedTime}:00`,
+          source: 'obsidian'
+        };
+      } else if (currentMemo && line.trim()) {
+        currentMemo.content += (currentMemo.content ? '\n' : '') + line.trim();
+      }
+    }
+    if (currentMemo) memos.push(currentMemo);
   }
 
+  return memos;
+}
+
+// GET /api/obsidian/daily-memos - Obsidian Daily Note 메모 조회
+app.get('/api/obsidian/daily-memos', (req, res) => {
+  const { date } = req.query;
+  const targetDate = date || new Date().toISOString().split('T')[0];
+
   try {
-    const content = fs.readFileSync(dailyNotePath, 'utf8');
-    const memos = [];
-
-    // "## ⏰ 시간별 메모" 섹션 파싱
-    const hourlyMatch = content.match(/## ⏰ 시간별 메모\n([\s\S]*?)(?=\n## |$)/);
-    if (hourlyMatch) {
-      const lines = hourlyMatch[1].trim().split('\n');
-      let currentMemo = null;
-
-      for (const line of lines) {
-        // 시간 형식: `HH:MM`, `오전 HH:MM`, `오후 HH:MM`, `AM HH:MM`, `PM HH:MM`
-        const match = line.match(/^- `((?:오[전후]|[AP]M)?\s*\d{1,2}:\d{2})`\s*(.*)$/);
-        if (match) {
-          // 이전 메모 저장
-          if (currentMemo) memos.push(currentMemo);
-
-          const timeStr = match[1].trim();
-          // HH:MM 추출 (24시간 변환)
-          const timeDigits = timeStr.match(/(\d{1,2}):(\d{2})/);
-          let hour = parseInt(timeDigits[1]);
-          const min = timeDigits[2];
-          if (/오후|PM/i.test(timeStr) && hour < 12) hour += 12;
-          if (/오전|AM/i.test(timeStr) && hour === 12) hour = 0;
-          const normalizedTime = `${String(hour).padStart(2, '0')}:${min}`;
-
-          currentMemo = {
-            id: `obsidian-${targetDate}-${normalizedTime}-${memos.length}`,
-            time: timeStr,
-            content: (match[2] || '').trim(),
-            timestamp: `${targetDate}T${normalizedTime}:00`,
-            source: 'obsidian'
-          };
-        } else if (currentMemo && line.trim()) {
-          // 멀티라인: 이전 메모에 이어붙이기
-          currentMemo.content += (currentMemo.content ? '\n' : '') + line.trim();
-        }
-      }
-      // 마지막 메모 저장
-      if (currentMemo) memos.push(currentMemo);
-    }
-
+    const memos = parseObsidianMemos(targetDate);
     res.json({ memos, source: 'obsidian', date: targetDate });
   } catch (err) {
     console.error('[Obsidian] 메모 읽기 실패:', err);
@@ -3398,6 +3394,159 @@ app.get('/api/github/activity', async (req, res) => {
     console.error('[GitHub] 활동 조회 오류:', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/timeline - 통합 타임라인
+app.get('/api/timeline', async (req, res) => {
+  const date = req.query.date || new Date().toISOString().split('T')[0];
+  const items = [];
+
+  // 1. 작업 이력
+  const history = [...jobHistory];
+  history.filter(h => h.startTime?.startsWith(date)).forEach(h => {
+    items.push({
+      id: `job-${h.id}`,
+      type: 'job',
+      time: h.startTime,
+      title: h.jobName || h.jobId,
+      subtitle: `${h.status === 'success' ? '성공' : h.status === 'failed' ? '실패' : '실행중'} (${((h.duration || 0) / 1000).toFixed(1)}s)`,
+      icon: h.status === 'success' ? 'job-success' : 'job-failed',
+      color: h.status === 'success' ? 'green' : 'red',
+      meta: { jobId: h.jobId, status: h.status, logId: h.id }
+    });
+  });
+
+  // 2. Claude 세션
+  try {
+    const sessions = findSessions(date);
+    sessions.forEach(s => {
+      items.push({
+        id: `session-${s.id}`,
+        type: 'session',
+        time: s.modifiedAt,
+        title: s.alias || s.project,
+        subtitle: s.alias ? `${s.project} / ${s.firstMessage?.substring(0, 50) || ''}` : (s.firstMessage?.substring(0, 60) || ''),
+        icon: 'session',
+        color: 'purple',
+        meta: { sessionId: s.id, projectPath: s.projectPath }
+      });
+    });
+  } catch (e) { /* ignore */ }
+
+  // 3. 대시보드 메모
+  try {
+    const dashMemos = loadQuickMemos().filter(m => m.timestamp?.startsWith(date));
+    dashMemos.forEach(m => {
+      items.push({
+        id: `memo-${m.id}`,
+        type: 'memo',
+        time: m.timestamp,
+        title: m.content?.substring(0, 100),
+        icon: 'memo',
+        color: 'yellow',
+        meta: { source: 'dashboard', memoId: m.id }
+      });
+    });
+  } catch (e) { /* ignore */ }
+
+  // 4. Obsidian 메모
+  try {
+    const obsidianMemos = parseObsidianMemos(date);
+    obsidianMemos.forEach(m => {
+      items.push({
+        id: m.id,
+        type: 'memo',
+        time: m.timestamp,
+        title: m.content?.substring(0, 100),
+        icon: 'memo-obsidian',
+        color: 'green',
+        meta: { source: 'obsidian' }
+      });
+    });
+  } catch (e) { /* ignore */ }
+
+  // 5. 모닝 플랜
+  try {
+    const plans = loadMorningPlans();
+    const todayPlan = plans.find(p => p.date === date);
+    if (todayPlan) {
+      items.push({
+        id: `plan-${todayPlan.id}`,
+        type: 'plan',
+        time: todayPlan.createdAt,
+        title: '하루 시작 계획',
+        subtitle: `목표 ${todayPlan.goals?.length || 0}개 / 업무 ${todayPlan.tasks?.length || 0}개`,
+        icon: 'plan',
+        color: 'orange',
+        meta: { planId: todayPlan.id }
+      });
+    }
+  } catch (e) { /* ignore */ }
+
+  // 6. GitHub 활동 (외부 API이므로 실패해도 나머지 반환)
+  try {
+    const accounts = await getGhAccounts();
+    const results = await Promise.allSettled(
+      accounts.map(a => fetchGithubEventsForAccount(a.username, date))
+    );
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue;
+      const data = r.value;
+      // PR
+      data.prs?.forEach(pr => {
+        items.push({
+          id: `gh-pr-${pr.repo}-${pr.number}`,
+          type: 'github',
+          time: pr.time,
+          title: `PR #${pr.number} ${pr.title || ''}`.trim(),
+          subtitle: `${pr.account} / ${pr.repoShort} / ${pr.action}`,
+          icon: 'github-pr',
+          color: 'blue',
+          meta: { url: pr.url, repo: pr.repo }
+        });
+      });
+      // Commits
+      data.commits?.forEach(c => {
+        items.push({
+          id: `gh-commit-${c.repo}-${c.time}`,
+          type: 'github',
+          time: c.time,
+          title: `${c.count}개 커밋 - ${c.repoShort}`,
+          subtitle: c.messages?.[0] || c.branch || '',
+          icon: 'github-commit',
+          color: 'blue',
+          meta: { repo: c.repo }
+        });
+      });
+      // Reviews
+      data.reviews?.forEach(rv => {
+        items.push({
+          id: `gh-review-${rv.repo}-${rv.prNumber}-${rv.time}`,
+          type: 'github',
+          time: rv.time,
+          title: `리뷰: ${rv.prTitle || `PR #${rv.prNumber}`}`,
+          subtitle: `${rv.account} / ${rv.repoShort} / ${rv.state}`,
+          icon: 'github-review',
+          color: 'blue',
+          meta: { repo: rv.repo }
+        });
+      });
+    }
+  } catch (e) { /* GitHub 실패 시 무시 */ }
+
+  // 시간순 정렬
+  items.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  // 요약
+  const summary = {
+    sessions: items.filter(i => i.type === 'session').length,
+    memos: items.filter(i => i.type === 'memo').length,
+    jobRuns: items.filter(i => i.type === 'job').length,
+    github: items.filter(i => i.type === 'github').length,
+    plans: items.filter(i => i.type === 'plan').length
+  };
+
+  res.json({ date, items, summary });
 });
 
 // GET /api/sessions - 세션 목록 조회

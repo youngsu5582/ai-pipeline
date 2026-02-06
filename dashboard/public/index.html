@@ -426,6 +426,56 @@
         </button>
       </div>
 
+      <!-- 통합 타임라인 -->
+      <div class="bg-gray-800/50 rounded-xl p-5 border border-gray-700/50 mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-3">
+            <button onclick="toggleTimelineCollapse()" class="flex items-center gap-1.5 group">
+              <span id="timelineCollapseIcon" class="text-gray-500 text-xs transition-transform duration-200 inline-block">&#9660;</span>
+              <h3 class="text-sm font-bold text-gray-300 group-hover:text-gray-100 transition-colors">오늘의 타임라인</h3>
+            </button>
+            <span id="homeTimelineCount" class="text-xs text-gray-500"></span>
+          </div>
+          <div class="flex items-center gap-1.5" id="timelineFilters">
+            <button onclick="toggleTimelineFilter('job')" data-filter="job" class="tl-filter-btn px-2 py-0.5 rounded-full text-xs border transition-colors border-green-700/50 text-green-400 bg-green-900/20">작업</button>
+            <button onclick="toggleTimelineFilter('session')" data-filter="session" class="tl-filter-btn px-2 py-0.5 rounded-full text-xs border transition-colors border-purple-700/50 text-purple-400 bg-purple-900/20">세션</button>
+            <button onclick="toggleTimelineFilter('memo')" data-filter="memo" class="tl-filter-btn px-2 py-0.5 rounded-full text-xs border transition-colors border-yellow-700/50 text-yellow-400 bg-yellow-900/20">메모</button>
+            <button onclick="toggleTimelineFilter('github')" data-filter="github" class="tl-filter-btn px-2 py-0.5 rounded-full text-xs border transition-colors border-blue-700/50 text-blue-400 bg-blue-900/20">GitHub</button>
+            <button onclick="toggleTimelineFilter('plan')" data-filter="plan" class="tl-filter-btn px-2 py-0.5 rounded-full text-xs border transition-colors border-orange-700/50 text-orange-400 bg-orange-900/20">플랜</button>
+          </div>
+        </div>
+        <div id="timelineBody" style="transition: max-height 0.3s ease, opacity 0.2s ease">
+          <!-- 시간 범위 슬라이더 -->
+          <div class="mb-3 px-1">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs text-gray-500">시간 범위</span>
+              <span id="timeRangeLabel" class="text-xs text-gray-400 font-mono">00:00 ~ 24:00</span>
+            </div>
+            <div id="timeRangeSlider" class="relative h-8 select-none" style="touch-action:none">
+              <!-- 트랙 배경 -->
+              <div class="absolute top-3 left-0 right-0 h-1.5 bg-gray-700 rounded-full"></div>
+              <!-- 활성 범위 -->
+              <div id="timeRangeActive" class="absolute top-3 h-1.5 bg-blue-500/60 rounded-full"></div>
+              <!-- 시간 눈금 -->
+              <div class="absolute top-6 left-0 right-0 flex justify-between px-0.5">
+                <span class="text-[9px] text-gray-600">0</span>
+                <span class="text-[9px] text-gray-600">6</span>
+                <span class="text-[9px] text-gray-600">12</span>
+                <span class="text-[9px] text-gray-600">18</span>
+                <span class="text-[9px] text-gray-600">24</span>
+              </div>
+              <!-- 핸들 (왼쪽) -->
+              <div id="timeHandleLeft" class="absolute top-1.5 w-4 h-4 bg-blue-400 border-2 border-gray-900 rounded-full cursor-grab hover:bg-blue-300 hover:scale-110 transition-transform z-10" style="left:0%"></div>
+              <!-- 핸들 (오른쪽) -->
+              <div id="timeHandleRight" class="absolute top-1.5 w-4 h-4 bg-blue-400 border-2 border-gray-900 rounded-full cursor-grab hover:bg-blue-300 hover:scale-110 transition-transform z-10" style="left:100%"></div>
+            </div>
+          </div>
+          <div id="homeTimeline" class="text-sm">
+            <div class="text-gray-500 text-center py-6">로딩중...</div>
+          </div>
+        </div>
+      </div>
+
       <!-- 2열 레이아웃 -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- 최근 실행 이력 -->
@@ -6040,6 +6090,277 @@
       } catch (err) {
         console.error('홈 대시보드 로드 실패:', err);
       }
+
+      // 타임라인 로드
+      loadTimeline();
+    }
+
+    // ============ 통합 타임라인 ============
+
+    let timelineData = [];
+    let timelineCollapsed = false;
+    const timelineFilters = { job: true, session: true, memo: true, github: true, plan: true };
+    let timeRangeStart = 0;   // 0~24 (시간)
+    let timeRangeEnd = 24;
+
+    async function loadTimeline() {
+      const today = new Date().toISOString().split('T')[0];
+      try {
+        const res = await fetch(`${API_BASE}/api/timeline?date=${today}`);
+        const data = await res.json();
+        timelineData = data.items || [];
+
+        const total = timelineData.length;
+        document.getElementById('homeTimelineCount').textContent = total > 0 ? `${total}개 항목` : '';
+
+        // 데이터 기반으로 시간 범위 자동 설정
+        if (timelineData.length > 0) {
+          const hours = timelineData.map(i => i.time ? new Date(i.time).getHours() : 12);
+          const minH = Math.max(0, Math.min(...hours));
+          const maxH = Math.min(24, Math.max(...hours) + 1);
+          timeRangeStart = minH;
+          timeRangeEnd = maxH;
+        }
+
+        updateTimeRangeUI();
+        renderTimeline();
+        initTimeRangeSlider();
+      } catch (err) {
+        console.error('타임라인 로드 실패:', err);
+        document.getElementById('homeTimeline').innerHTML =
+          '<div class="text-gray-500 text-center py-6">타임라인을 불러올 수 없습니다</div>';
+      }
+    }
+
+    function toggleTimelineCollapse() {
+      timelineCollapsed = !timelineCollapsed;
+      const body = document.getElementById('timelineBody');
+      const icon = document.getElementById('timelineCollapseIcon');
+      if (timelineCollapsed) {
+        body.style.maxHeight = '0';
+        body.style.overflow = 'hidden';
+        body.style.opacity = '0';
+        icon.style.transform = 'rotate(-90deg)';
+      } else {
+        body.style.maxHeight = '';
+        body.style.overflow = '';
+        body.style.opacity = '1';
+        icon.style.transform = '';
+      }
+    }
+
+    function updateTimeRangeUI() {
+      const label = document.getElementById('timeRangeLabel');
+      const fmtH = h => `${String(Math.floor(h)).padStart(2,'0')}:${String(Math.round((h % 1) * 60)).padStart(2,'0')}`;
+      label.textContent = `${fmtH(timeRangeStart)} ~ ${fmtH(timeRangeEnd)}`;
+
+      const pctL = (timeRangeStart / 24) * 100;
+      const pctR = (timeRangeEnd / 24) * 100;
+      const active = document.getElementById('timeRangeActive');
+      const handleL = document.getElementById('timeHandleLeft');
+      const handleR = document.getElementById('timeHandleRight');
+      if (active) {
+        active.style.left = pctL + '%';
+        active.style.width = (pctR - pctL) + '%';
+      }
+      if (handleL) handleL.style.left = `calc(${pctL}% - 8px)`;
+      if (handleR) handleR.style.left = `calc(${pctR}% - 8px)`;
+    }
+
+    function initTimeRangeSlider() {
+      const slider = document.getElementById('timeRangeSlider');
+      if (!slider || slider._initialized) return;
+      slider._initialized = true;
+
+      const handleL = document.getElementById('timeHandleLeft');
+      const handleR = document.getElementById('timeHandleRight');
+      let dragging = null; // 'left' | 'right' | 'range'
+      let dragStartX = 0;
+      let dragStartValL = 0;
+      let dragStartValR = 0;
+
+      function pxToHour(clientX) {
+        const rect = slider.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        return Math.round(pct * 48) / 2; // 0.5시간 단위
+      }
+
+      function onPointerDown(e, which) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragging = which;
+        dragStartX = e.clientX;
+        dragStartValL = timeRangeStart;
+        dragStartValR = timeRangeEnd;
+        document.body.style.cursor = 'grabbing';
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', onPointerUp);
+      }
+
+      handleL.addEventListener('pointerdown', e => onPointerDown(e, 'left'));
+      handleR.addEventListener('pointerdown', e => onPointerDown(e, 'right'));
+
+      // 트랙 클릭으로 범위 드래그
+      slider.addEventListener('pointerdown', (e) => {
+        if (e.target === handleL || e.target === handleR) return;
+        const h = pxToHour(e.clientX);
+        // 가까운 핸들 이동
+        if (Math.abs(h - timeRangeStart) < Math.abs(h - timeRangeEnd)) {
+          dragging = 'left';
+        } else {
+          dragging = 'right';
+        }
+        dragStartX = e.clientX;
+        dragStartValL = timeRangeStart;
+        dragStartValR = timeRangeEnd;
+        applyDrag(e.clientX);
+        document.body.style.cursor = 'grabbing';
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', onPointerUp);
+      });
+
+      function onPointerMove(e) {
+        if (!dragging) return;
+        applyDrag(e.clientX);
+      }
+
+      function applyDrag(clientX) {
+        const h = pxToHour(clientX);
+        if (dragging === 'left') {
+          timeRangeStart = Math.min(h, timeRangeEnd - 0.5);
+          timeRangeStart = Math.max(0, timeRangeStart);
+        } else if (dragging === 'right') {
+          timeRangeEnd = Math.max(h, timeRangeStart + 0.5);
+          timeRangeEnd = Math.min(24, timeRangeEnd);
+        }
+        updateTimeRangeUI();
+        renderTimeline();
+      }
+
+      function onPointerUp() {
+        dragging = null;
+        document.body.style.cursor = '';
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+      }
+    }
+
+    function renderTimeline() {
+      const container = document.getElementById('homeTimeline');
+      const filtered = timelineData.filter(item => {
+        if (timelineFilters[item.type] === false) return false;
+        // 시간 범위 필터
+        if (item.time) {
+          const d = new Date(item.time);
+          const h = d.getHours() + d.getMinutes() / 60;
+          if (h < timeRangeStart || h >= timeRangeEnd) return false;
+        }
+        return true;
+      });
+
+      // 필터된 개수 업데이트
+      const countEl = document.getElementById('homeTimelineCount');
+      if (timeRangeStart > 0 || timeRangeEnd < 24 ||
+          Object.values(timelineFilters).some(v => !v)) {
+        countEl.textContent = `${filtered.length} / ${timelineData.length}개`;
+      } else {
+        countEl.textContent = timelineData.length > 0 ? `${timelineData.length}개 항목` : '';
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="text-gray-500 text-center py-6">해당 범위에 활동이 없습니다</div>';
+        return;
+      }
+
+      // 시간대별 그룹핑
+      const groups = { morning: [], afternoon: [], evening: [] };
+      filtered.forEach(item => {
+        const hour = item.time ? new Date(item.time).getHours() : 12;
+        if (hour < 12) groups.morning.push(item);
+        else if (hour < 18) groups.afternoon.push(item);
+        else groups.evening.push(item);
+      });
+
+      const labels = { morning: '오전', afternoon: '오후', evening: '저녁' };
+      let html = '';
+      for (const [key, items] of Object.entries(groups)) {
+        if (items.length === 0) continue;
+        html += `<div class="mb-4">
+          <div class="text-xs font-medium text-gray-500 mb-2 pl-8">${labels[key]} (${items.length})</div>
+          <div class="relative pl-6 border-l-2 border-gray-700 space-y-1">
+            ${items.map(renderTimelineItem).join('')}
+          </div>
+        </div>`;
+      }
+
+      container.innerHTML = html;
+    }
+
+    function renderTimelineItem(item) {
+      const colors = {
+        green: 'bg-green-500', red: 'bg-red-500', purple: 'bg-purple-500',
+        yellow: 'bg-yellow-500', blue: 'bg-blue-500', orange: 'bg-orange-500'
+      };
+      const icons = {
+        session: '🤖', memo: '📝', 'memo-obsidian': '📓',
+        'job-success': '✅', 'job-failed': '❌',
+        'github-pr': '🔀', 'github-commit': '📦', 'github-review': '👀',
+        plan: '☀️'
+      };
+      const time = item.time
+        ? new Date(item.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+        : '';
+
+      const metaStr = JSON.stringify(item.meta || {}).replace(/"/g, '&quot;');
+
+      return `<div class="relative flex items-start gap-3 group cursor-pointer hover:bg-gray-800/30 p-2 -ml-2 rounded-lg transition-colors"
+           onclick="handleTimelineClick('${item.type}', JSON.parse(this.dataset.meta))" data-meta="${metaStr}">
+        <div class="absolute -left-[25px] w-3 h-3 rounded-full ${colors[item.color] || 'bg-gray-500'} border-2 border-gray-900 mt-1.5"></div>
+        <span class="text-xs text-gray-600 w-14 flex-shrink-0 mt-0.5">${time}</span>
+        <span class="flex-shrink-0">${icons[item.icon] || '📌'}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm text-gray-300 truncate">${escapeHtml(item.title || '')}</div>
+          ${item.subtitle ? `<div class="text-xs text-gray-600 truncate">${escapeHtml(item.subtitle)}</div>` : ''}
+        </div>
+      </div>`;
+    }
+
+    function handleTimelineClick(type, meta) {
+      switch (type) {
+        case 'session':
+          showTab('sessions');
+          if (meta.sessionId) setTimeout(() => showSessionDetail(meta.sessionId, meta.projectPath), 100);
+          break;
+        case 'job':
+          showTab('jobs');
+          showJobSubTab('history');
+          if (meta.logId) setTimeout(() => showLogById(meta.logId), 200);
+          break;
+        case 'memo':
+          showTab('notes');
+          break;
+        case 'plan':
+          openMorningStart();
+          break;
+        case 'github':
+          if (meta.url) window.open(meta.url, '_blank');
+          break;
+      }
+    }
+
+    function toggleTimelineFilter(type) {
+      timelineFilters[type] = !timelineFilters[type];
+
+      const btn = document.querySelector(`.tl-filter-btn[data-filter="${type}"]`);
+      if (btn) {
+        if (timelineFilters[type]) {
+          btn.classList.remove('opacity-30');
+        } else {
+          btn.classList.add('opacity-30');
+        }
+      }
+
+      renderTimeline();
     }
 
     function openAskModal() {
