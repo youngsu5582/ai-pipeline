@@ -142,35 +142,20 @@ GET /api/timeline?date=2026-02-06
 
 ---
 
-## 1.2 통합 검색 (Global Search) — 미구현
+## 1.2 통합 검색 (Global Search) — 구현 완료
 
-### UI: Cmd+K 검색 모달
-
-```html
-<div id="globalSearchModal" class="modal fixed inset-0 bg-black/60 items-center justify-start pt-[20vh] z-50"
-     style="display:none">
-  <div class="bg-gray-800 rounded-xl w-full max-w-2xl mx-auto shadow-2xl border border-gray-700">
-    <!-- 검색 입력 -->
-    <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-700">
-      <span class="text-gray-500">🔍</span>
-      <input id="globalSearchInput" type="text" placeholder="검색... (세션, 메모, 작업, 이력)"
-        class="flex-1 bg-transparent text-lg outline-none text-gray-200"
-        oninput="debounceGlobalSearch()" onkeydown="handleSearchKeydown(event)">
-      <kbd class="text-xs text-gray-600 bg-gray-700 px-1.5 py-0.5 rounded">ESC</kbd>
-    </div>
-    <!-- 검색 결과 -->
-    <div id="globalSearchResults" class="max-h-[50vh] overflow-y-auto p-2">
-      <!-- 최근 검색 or 검색 결과 -->
-    </div>
-  </div>
-</div>
-```
-
-### 새 API: `GET /api/search`
+### API: `GET /api/search`
 
 ```
-GET /api/search?q=graceful+shutdown&types=session,memo,job
+GET /api/search?q=graceful+shutdown&types=session,memo,job,backlog
 ```
+
+**검색 범위:**
+- 대시보드 메모 (`loadQuickMemos()`)
+- Obsidian 메모 (`parseObsidianMemos()`, 최근 7일)
+- Claude 세션 (`findSessions()`, 최근 7일 — alias, project, firstMessage)
+- 작업 이력 (`jobHistory` — jobName, jobId)
+- 백로그 (`loadBacklogs()`)
 
 **Response:**
 ```json
@@ -182,54 +167,56 @@ GET /api/search?q=graceful+shutdown&types=session,memo,job
       "title": "ECS 에서 graceful shutdown 확인중",
       "preview": "이때, 근데 dumb init 이 필요했던거 같음...",
       "date": "2026-02-06",
-      "score": 0.95
-    },
-    {
-      "type": "session",
-      "id": "session-abc",
-      "title": "ai-pipeline 세션",
-      "preview": "...graceful shutdown 관련 코드 수정...",
-      "date": "2026-02-06",
-      "score": 0.8
+      "time": "2026-02-06T09:30:00",
+      "icon": "📓"
     }
   ],
   "total": 2
 }
 ```
 
-### 키보드 단축키
+### UI: Cmd+K / `/` 검색 모달
 
-```javascript
-// Cmd+K or / 로 검색 열기
-document.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-    e.preventDefault();
-    openGlobalSearch();
-  }
-});
-```
+- `globalSearchModal`: 오버레이 + 검색 입력 + 결과 목록
+- 250ms 디바운스 검색
+- 키보드 네비게이션: `↑↓` 선택, `Enter` 이동, `Esc` 닫기
+- 마우스 hover로 선택, 클릭으로 이동
+- 검색어 하이라이트 (노란색 마크)
+- 결과 클릭 시: session → 세션 상세, job → 실행이력, memo → 노트탭, backlog → 노트탭
+
+### 주요 함수 (index.html)
+
+| 함수 | 역할 |
+|------|------|
+| `openGlobalSearch()` / `closeGlobalSearch()` | 모달 열기/닫기 |
+| `debounceGlobalSearch()` | 디바운스 트리거 |
+| `executeGlobalSearch()` | API 호출 + 결과 렌더링 |
+| `handleSearchKeydown(e)` | 키보드 네비게이션 |
+| `navigateSearchResult(type, idx)` | 결과 클릭 → 해당 화면 이동 |
+| `highlightQuery(text, query)` | 검색어 하이라이트 |
 
 ---
 
-## 1.3 날짜 네비게이션 통합 — 미구현
+## 1.3 날짜 네비게이션 통합 — 구현 완료
 
-홈 대시보드의 기존 요약 카드 위에 날짜 선택기 추가 (노트 탭의 패턴 재사용):
+홈 대시보드 상단에 날짜 선택기 추가 (노트 탭 패턴 재사용):
 
-```html
-<div class="flex items-center justify-between mb-6">
-  <h2 class="text-xl font-bold">🏠 대시보드</h2>
-  <!-- 날짜 선택기 (노트 탭과 동일 패턴) -->
-  <div class="flex items-center gap-1 bg-gray-800 rounded-lg px-1 py-1">
-    <button onclick="shiftHomeDate(-1)" class="...">‹</button>
-    <button id="homeDateLabel" onclick="document.getElementById('homeDateInput').showPicker()" class="..."></button>
-    <input type="date" id="homeDateInput" class="sr-only" onchange="setHomeDate(this.value)">
-    <button onclick="shiftHomeDate(1)" id="homeDateNext" class="...">›</button>
-    <button onclick="setHomeToday()" class="...">오늘</button>
-  </div>
-</div>
-```
+- `homeDate` 상태 변수로 현재 조회 날짜 관리
+- `‹` / `›` 버튼으로 하루씩 이동
+- 날짜 라벨 클릭 시 date picker 열림
+- "오늘" 버튼으로 오늘 날짜 복귀
+- 미래 날짜 `›` 비활성화
+- 날짜 변경 시 → `loadHomeDashboard()` (요약카드 + 최근 실행/메모) + `loadTimeline()` (타임라인) 갱신
 
-날짜 변경 시 → `loadHomeDashboard(date)` + 타임라인 로드.
+### 주요 함수 (index.html)
+
+| 함수 | 역할 |
+|------|------|
+| `initHomeDate()` | 초기화 + UI 업데이트 |
+| `updateHomeDateUI()` | 라벨 텍스트 + 미래 비활성화 |
+| `setHomeDate(dateStr)` | 날짜 설정 + 데이터 리로드 |
+| `shiftHomeDate(delta)` | +1/-1일 이동 |
+| `setHomeToday()` | 오늘로 복귀 |
 
 ---
 
@@ -244,10 +231,15 @@ document.addEventListener('keydown', (e) => {
 6. 타임라인 헤더 클릭 → 접기/펼치기 확인
 7. `curl "http://localhost:3030/api/timeline?date=2026-02-06" | jq` 로 API 응답 확인
 
-### 1.2 통합 검색 (미구현)
-- Cmd+K → 검색 모달 열림 확인
-- 검색어 입력 → 결과 표시 + 클릭으로 이동 확인
-- `curl "http://localhost:3030/api/search?q=graceful" | jq` 로 검색 API 확인
+### 1.2 통합 검색 (구현 완료)
+1. Cmd+K 또는 `/` 키 → 검색 모달 열림 확인
+2. 검색어 입력 → 250ms 후 결과 표시 확인
+3. `↑↓` 키보드 네비게이션 → 선택 이동 확인
+4. `Enter` 또는 클릭 → 해당 화면 이동 확인
+5. `curl "http://localhost:3030/api/search?q=graceful" | jq` 로 검색 API 확인
 
-### 1.3 날짜 네비게이션 (미구현)
-- 날짜 변경 → 해당 날짜 타임라인 로드 확인
+### 1.3 날짜 네비게이션 (구현 완료)
+1. 홈 탭 상단 `‹` / `›` 버튼 → 날짜 이동 확인
+2. 날짜 변경 시 → 요약카드 + 타임라인 + 최근 실행/메모 갱신 확인
+3. 미래 날짜 이동 불가 확인
+4. "오늘" 버튼 → 오늘 날짜 복귀 확인

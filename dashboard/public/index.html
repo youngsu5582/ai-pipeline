@@ -377,6 +377,17 @@
 
     <!-- Home Dashboard -->
     <div id="panel-home">
+      <!-- 날짜 네비게이션 -->
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-lg font-bold text-gray-200">대시보드</h2>
+        <div class="flex items-center gap-1 bg-gray-800 rounded-lg px-1 py-1">
+          <button onclick="shiftHomeDate(-1)" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">&lsaquo;</button>
+          <button id="homeDateLabel" onclick="document.getElementById('homeDateInput').showPicker()" class="px-3 py-1 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors cursor-pointer font-medium">오늘</button>
+          <input type="date" id="homeDateInput" class="sr-only" onchange="setHomeDate(this.value)">
+          <button onclick="shiftHomeDate(1)" id="homeDateNext" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">&rsaquo;</button>
+          <button onclick="setHomeToday()" class="px-2.5 py-1 text-xs text-blue-400 hover:text-blue-300 hover:bg-gray-700 rounded transition-colors ml-1">오늘</button>
+        </div>
+      </div>
       <!-- 4칸 요약 카드 -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div onclick="showTab('jobs')" class="cursor-pointer bg-gradient-to-br from-blue-900/40 to-blue-800/20 border border-blue-800/30 rounded-xl p-5 hover:border-blue-600/50 hover:scale-[1.02] transition-all">
@@ -1347,6 +1358,23 @@
         <button onclick="closeRenameSessionModal()" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors">
           취소
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Search Modal (Cmd+K) -->
+  <div id="globalSearchModal" class="modal fixed inset-0 bg-black/60 items-start justify-center pt-[18vh] z-50"
+       style="display:none" onclick="if(event.target===this)closeGlobalSearch()">
+    <div class="bg-gray-800 rounded-xl w-full max-w-2xl mx-4 shadow-2xl border border-gray-700">
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-700">
+        <span class="text-gray-500 text-lg">🔍</span>
+        <input id="globalSearchInput" type="text" placeholder="검색... (세션, 메모, 작업, 백로그)"
+          class="flex-1 bg-transparent text-lg outline-none text-gray-200 placeholder-gray-600"
+          oninput="debounceGlobalSearch()" onkeydown="handleSearchKeydown(event)">
+        <kbd class="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">ESC</kbd>
+      </div>
+      <div id="globalSearchResults" class="max-h-[50vh] overflow-y-auto p-2">
+        <div class="text-center text-gray-600 text-sm py-8">Cmd+K로 검색을 시작하세요</div>
       </div>
     </div>
   </div>
@@ -4550,17 +4578,32 @@
     // ============ Keyboard Shortcuts ============
 
     document.addEventListener('keydown', (e) => {
+      // Cmd+K / Ctrl+K: 글로벌 검색 (어디서든 동작)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        openGlobalSearch();
+        return;
+      }
+
       // 입력 필드에서는 단축키 비활성화
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
         // Esc는 예외적으로 처리
         if (e.key === 'Escape') {
-          e.target.blur();
+          if (document.getElementById('globalSearchModal').style.display === 'flex') {
+            closeGlobalSearch();
+          } else {
+            e.target.blur();
+          }
         }
         return;
       }
 
       // 모달이 열려있을 때 Esc로 닫기
       if (e.key === 'Escape') {
+        if (document.getElementById('globalSearchModal').style.display === 'flex') {
+          closeGlobalSearch();
+          return;
+        }
         const modals = document.querySelectorAll('.modal.active');
         if (modals.length > 0) {
           modals.forEach(m => m.classList.remove('active'));
@@ -4580,14 +4623,9 @@
           e.preventDefault();
           openAddModal();
           break;
-        case '/':  // 검색 포커스
+        case '/':  // 글로벌 검색
           e.preventDefault();
-          const searchInput = document.getElementById('historySearch');
-          if (searchInput) {
-            showTab('jobs');
-            showJobSubTab('history');
-            setTimeout(() => searchInput.focus(), 100);
-          }
+          openGlobalSearch();
           break;
         case '1':  // 홈 탭
           e.preventDefault();
@@ -5997,16 +6035,67 @@
       checkMorningPlanExists();
     }
 
+    let homeDate = new Date().toISOString().split('T')[0];
+
+    function initHomeDate() {
+      updateHomeDateUI();
+    }
+
+    function updateHomeDateUI() {
+      const today = new Date().toISOString().split('T')[0];
+      const d = new Date(homeDate + 'T00:00:00');
+      const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+      const isToday = homeDate === today;
+      const label = document.getElementById('homeDateLabel');
+      const input = document.getElementById('homeDateInput');
+      const nextBtn = document.getElementById('homeDateNext');
+
+      if (label) {
+        const m = d.getMonth() + 1;
+        const day = d.getDate();
+        const wd = weekdays[d.getDay()];
+        label.textContent = isToday ? `오늘 (${m}/${day} ${wd})` : `${m}/${day} (${wd})`;
+        label.title = homeDate;
+      }
+      if (input) input.value = homeDate;
+      if (nextBtn) {
+        nextBtn.disabled = homeDate >= today;
+        nextBtn.style.opacity = homeDate >= today ? '0.3' : '1';
+      }
+    }
+
+    function setHomeDate(dateStr) {
+      const today = new Date().toISOString().split('T')[0];
+      if (dateStr > today) dateStr = today;
+      homeDate = dateStr;
+      updateHomeDateUI();
+      loadHomeDashboard();
+    }
+
+    function shiftHomeDate(delta) {
+      const d = new Date(homeDate + 'T00:00:00');
+      d.setDate(d.getDate() + delta);
+      setHomeDate(d.toISOString().split('T')[0]);
+    }
+
+    function setHomeToday() {
+      setHomeDate(new Date().toISOString().split('T')[0]);
+    }
+
     async function loadHomeDashboard() {
       try {
+        const dateParam = homeDate;
         const today = new Date().toISOString().split('T')[0];
+        const isToday = dateParam === today;
+        updateHomeDateUI();
+
         const [summaryRes, jobsRes, historyRes, memosRes, backlogsRes, obsidianRes] = await Promise.all([
-          fetch(`${API_BASE}/api/today/summary`).catch(() => null),
+          isToday ? fetch(`${API_BASE}/api/today/summary`).catch(() => null) : null,
           fetch(`${API_BASE}/api/jobs`).catch(() => null),
-          fetch(`${API_BASE}/api/history?limit=5`).catch(() => null),
-          fetch(`${API_BASE}/api/quick-memos?date=${today}`).catch(() => null),
+          fetch(`${API_BASE}/api/history?limit=5${!isToday ? `&startDate=${dateParam}&endDate=${dateParam}` : ''}`).catch(() => null),
+          fetch(`${API_BASE}/api/quick-memos?date=${dateParam}`).catch(() => null),
           fetch(`${API_BASE}/api/backlogs`).catch(() => null),
-          fetch(`${API_BASE}/api/obsidian/daily-memos?date=${today}`).catch(() => null)
+          fetch(`${API_BASE}/api/obsidian/daily-memos?date=${dateParam}`).catch(() => null)
         ]);
 
         // 요약 카드
@@ -6104,9 +6193,8 @@
     let timeRangeEnd = 24;
 
     async function loadTimeline() {
-      const today = new Date().toISOString().split('T')[0];
       try {
-        const res = await fetch(`${API_BASE}/api/timeline?date=${today}`);
+        const res = await fetch(`${API_BASE}/api/timeline?date=${homeDate}`);
         const data = await res.json();
         timelineData = data.items || [];
 
@@ -6361,6 +6449,157 @@
       }
 
       renderTimeline();
+    }
+
+    // ============ 통합 검색 (Cmd+K) ============
+
+    let searchDebounceTimer = null;
+    let searchSelectedIdx = -1;
+
+    function openGlobalSearch() {
+      const modal = document.getElementById('globalSearchModal');
+      modal.style.display = 'flex';
+      const input = document.getElementById('globalSearchInput');
+      input.value = '';
+      searchSelectedIdx = -1;
+      document.getElementById('globalSearchResults').innerHTML =
+        '<div class="text-center text-gray-600 text-sm py-8">검색어를 입력하세요 (2글자 이상)</div>';
+      setTimeout(() => input.focus(), 50);
+    }
+
+    function closeGlobalSearch() {
+      document.getElementById('globalSearchModal').style.display = 'none';
+    }
+
+    function debounceGlobalSearch() {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(executeGlobalSearch, 250);
+    }
+
+    function highlightQuery(text, query) {
+      if (!query) return text;
+      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark class="bg-yellow-500/30 text-yellow-300 rounded px-0.5">$1</mark>');
+    }
+
+    function selectSearchResult(idx) {
+      const items = document.querySelectorAll('.search-result');
+      items.forEach((el, i) => {
+        el.classList.toggle('bg-gray-700/30', i === idx);
+      });
+      searchSelectedIdx = idx;
+    }
+
+    function handleSearchKeydown(e) {
+      const items = document.querySelectorAll('.search-result');
+      if (e.key === 'Escape') {
+        closeGlobalSearch();
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        selectSearchResult(Math.min(searchSelectedIdx + 1, items.length - 1));
+        items[searchSelectedIdx]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        selectSearchResult(Math.max(searchSelectedIdx - 1, 0));
+        items[searchSelectedIdx]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter' && searchSelectedIdx >= 0) {
+        e.preventDefault();
+        handleSearchResultClick(searchSelectedIdx);
+      }
+    }
+
+    function handleSearchResultClick(idx) {
+      const container = document.getElementById('globalSearchResults');
+      const items = container.querySelectorAll('.search-result');
+      if (!items[idx]) return;
+
+      // 결과 데이터를 다시 API에서 가져오지 않고, DOM에서 type 추출
+      const typeEl = items[idx].querySelector('.flex-col .text-\\[10px\\]:last-child');
+      const type = typeEl?.textContent?.trim() || '';
+
+      closeGlobalSearch();
+
+      // onclick에서 호출되므로 data attribute로 meta를 전달하기 어려움
+      // 대신 마지막 검색 결과를 저장해서 사용
+      navigateSearchResult(type, idx);
+    }
+
+    let lastSearchResults = [];
+
+    async function executeGlobalSearch() {
+      const q = document.getElementById('globalSearchInput').value.trim();
+      const container = document.getElementById('globalSearchResults');
+      if (q.length < 2) {
+        container.innerHTML = '<div class="text-center text-gray-600 text-sm py-8">검색어를 입력하세요 (2글자 이상)</div>';
+        lastSearchResults = [];
+        return;
+      }
+
+      container.innerHTML = '<div class="text-center text-gray-500 text-sm py-6">검색중...</div>';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        lastSearchResults = data.results || [];
+        searchSelectedIdx = -1;
+
+        if (lastSearchResults.length === 0) {
+          container.innerHTML = '<div class="text-center text-gray-500 text-sm py-8">검색 결과가 없습니다</div>';
+          return;
+        }
+
+        container.innerHTML = lastSearchResults.map((r, idx) => {
+          const dateStr = r.date || '';
+          const highlighted = highlightQuery(escapeHtml(r.title || ''), q);
+          const previewHighlighted = r.preview ? highlightQuery(escapeHtml(r.preview), q) : '';
+          return `<div class="search-result flex items-start gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-gray-700/50 transition-colors ${idx === 0 ? 'bg-gray-700/30' : ''}"
+                       data-idx="${idx}" onclick="handleSearchResultClick(${idx})"
+                       onmouseenter="selectSearchResult(${idx})">
+            <span class="flex-shrink-0 mt-0.5">${r.icon || '📄'}</span>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm text-gray-200 truncate">${highlighted}</div>
+              ${previewHighlighted ? `<div class="text-xs text-gray-500 truncate mt-0.5">${previewHighlighted}</div>` : ''}
+            </div>
+            <div class="flex flex-col items-end flex-shrink-0">
+              <span class="text-[10px] text-gray-600">${dateStr}</span>
+              <span class="text-[10px] text-gray-600 mt-0.5">${r.type}</span>
+            </div>
+          </div>`;
+        }).join('');
+
+        if (data.total > lastSearchResults.length) {
+          container.innerHTML += `<div class="text-center text-gray-600 text-xs py-2">${data.total}개 중 ${lastSearchResults.length}개 표시</div>`;
+        }
+
+        searchSelectedIdx = 0;
+      } catch (err) {
+        container.innerHTML = '<div class="text-center text-red-400 text-sm py-6">검색 오류</div>';
+      }
+    }
+
+    function navigateSearchResult(type, idx) {
+      const r = lastSearchResults[idx];
+      if (!r) return;
+
+      switch (r.type) {
+        case 'session':
+          showTab('sessions');
+          if (r.meta?.sessionId) setTimeout(() => showSessionDetail(r.meta.sessionId, r.meta.projectPath), 100);
+          break;
+        case 'job':
+          showTab('jobs');
+          showJobSubTab('history');
+          if (r.meta?.logId) setTimeout(() => showLogById(r.meta.logId), 200);
+          break;
+        case 'memo':
+          showTab('notes');
+          break;
+        case 'backlog':
+          showTab('notes');
+          break;
+      }
     }
 
     function openAskModal() {
@@ -7677,6 +7916,7 @@
       refreshTodaySummary();
 
       // 홈 대시보드 로드
+      initHomeDate();
       loadHomeDashboard();
 
       // SSE 연결 초기화 (비동기 작업 시스템)

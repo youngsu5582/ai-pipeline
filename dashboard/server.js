@@ -3549,6 +3549,121 @@ app.get('/api/timeline', async (req, res) => {
   res.json({ date, items, summary });
 });
 
+// GET /api/search - 통합 검색
+app.get('/api/search', (req, res) => {
+  const { q, types } = req.query;
+  if (!q || q.length < 2) return res.json({ results: [], total: 0 });
+
+  const query = q.toLowerCase();
+  const allowedTypes = types ? types.split(',') : ['session', 'memo', 'job', 'backlog'];
+  const results = [];
+
+  // 대시보드 메모 검색
+  if (allowedTypes.includes('memo')) {
+    try {
+      const memos = loadQuickMemos();
+      memos.filter(m => m.content?.toLowerCase().includes(query)).forEach(m => {
+        results.push({
+          type: 'memo', id: m.id,
+          title: m.content.substring(0, 60),
+          preview: m.content.substring(0, 120),
+          date: m.timestamp?.split('T')[0],
+          time: m.timestamp,
+          icon: '📝'
+        });
+      });
+    } catch (e) { /* ignore */ }
+
+    // Obsidian 메모 검색 (최근 7일)
+    try {
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const memos = parseObsidianMemos(dateStr);
+        memos.filter(m => m.content?.toLowerCase().includes(query)).forEach(m => {
+          results.push({
+            type: 'memo', id: m.id,
+            title: m.content.substring(0, 60),
+            preview: m.content.substring(0, 120),
+            date: dateStr,
+            time: m.timestamp,
+            icon: '📓'
+          });
+        });
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // 세션 검색 (alias, project, firstMessage — 최근 7일)
+  if (allowedTypes.includes('session')) {
+    try {
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const sessions = findSessions(dateStr);
+        sessions.filter(s =>
+          s.alias?.toLowerCase().includes(query) ||
+          s.project?.toLowerCase().includes(query) ||
+          s.firstMessage?.toLowerCase().includes(query)
+        ).forEach(s => {
+          results.push({
+            type: 'session', id: s.id,
+            title: s.alias || s.project,
+            preview: s.firstMessage?.substring(0, 120) || '',
+            date: dateStr,
+            time: s.modifiedAt,
+            icon: '🤖',
+            meta: { sessionId: s.id, projectPath: s.projectPath }
+          });
+        });
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // 작업 이력 검색
+  if (allowedTypes.includes('job')) {
+    const history = [...jobHistory];
+    history.filter(h =>
+      h.jobName?.toLowerCase().includes(query) ||
+      h.jobId?.toLowerCase().includes(query)
+    ).forEach(h => {
+      results.push({
+        type: 'job', id: String(h.id),
+        title: h.jobName || h.jobId,
+        preview: `${h.status === 'success' ? '성공' : '실패'} - ${(h.duration / 1000).toFixed(1)}s`,
+        date: h.startTime?.split('T')[0],
+        time: h.startTime,
+        icon: h.status === 'success' ? '✅' : '❌',
+        meta: { logId: h.id }
+      });
+    });
+  }
+
+  // 백로그 검색
+  if (allowedTypes.includes('backlog')) {
+    try {
+      const backlogs = loadBacklogs();
+      backlogs.filter(b => b.content?.toLowerCase().includes(query)).forEach(b => {
+        results.push({
+          type: 'backlog', id: b.id,
+          title: b.content.substring(0, 60),
+          preview: b.content.substring(0, 120),
+          date: b.createdAt?.split('T')[0],
+          time: b.createdAt,
+          icon: b.done ? '✔️' : '📋'
+        });
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  // 최신순 정렬
+  results.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+
+  res.json({ results: results.slice(0, 30), total: results.length });
+});
+
 // GET /api/sessions - 세션 목록 조회
 app.get('/api/sessions', (req, res) => {
   const { date, project } = req.query;
