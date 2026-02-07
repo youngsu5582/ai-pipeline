@@ -4417,6 +4417,12 @@ app.get('/api/sessions', (req, res) => {
       s.hasSummary = summaryIds.has(s.id);
     }
 
+    // 인사이트 생성 여부 표시
+    const insights = loadSessionInsights();
+    for (const s of sessions) {
+      s.hasInsights = !!insights[s.id];
+    }
+
     res.json({ sessions, date: targetDate });
   } catch (err) {
     res.status(500).json({ error: err.message });

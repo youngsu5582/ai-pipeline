@@ -1062,11 +1062,15 @@
       <div id="sessionsSubPanel-list">
         <!-- Sessions Filter -->
         <div class="flex items-center gap-4 mb-6 bg-gray-800 rounded-lg p-4">
-          <div>
-            <label class="text-sm text-gray-400 mr-2">날짜:</label>
+          <div class="flex items-center gap-1">
+            <label class="text-sm text-gray-400 mr-1">날짜:</label>
+            <button onclick="shiftSessionsDate(-1)"
+              class="px-2 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">‹</button>
             <input type="date" id="sessionsDate"
               class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm"
               onchange="loadSessions()">
+            <button onclick="shiftSessionsDate(1)" id="sessionsDateNext"
+              class="px-2 py-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">›</button>
           </div>
           <div>
             <label class="text-sm text-gray-400 mr-2">프로젝트:</label>
@@ -5796,6 +5800,26 @@
         document.getElementById('sessionsList').innerHTML =
           '<div class="text-center text-red-400 py-8">세션 로드 실패</div>';
       }
+      // next 버튼 상태 동기화
+      const nextBtn = document.getElementById('sessionsDateNext');
+      if (nextBtn) {
+        const today = getKSTDateString();
+        nextBtn.style.opacity = (document.getElementById('sessionsDate').value || today) >= today ? '0.3' : '1';
+      }
+    }
+
+    function shiftSessionsDate(delta) {
+      const input = document.getElementById('sessionsDate');
+      const current = input.value || getKSTDateString();
+      const d = new Date(current + 'T00:00:00');
+      d.setDate(d.getDate() + delta);
+      const newDate = getKSTDateString(d);
+      const today = getKSTDateString();
+      if (newDate > today) return;
+      input.value = newDate;
+      const nextBtn = document.getElementById('sessionsDateNext');
+      if (nextBtn) nextBtn.style.opacity = newDate >= today ? '0.3' : '1';
+      loadSessions();
     }
 
     function renderSessions(sessions, date) {
@@ -5827,6 +5851,7 @@
                 ${new Date(s.modifiedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
               </span>
               ${s.hasSummary ? '<span class="text-green-400 text-sm" title="요약 생성됨">📋</span>' : ''}
+              ${s.hasInsights ? '<span class="text-purple-400 text-sm" title="인사이트 생성됨">🔍</span>' : ''}
               <button data-session-id="${s.id}" data-alias="${escapeHtml(s.alias || '').replace(/'/g, '&#39;')}"
                       onclick="event.stopPropagation(); editSessionAliasFromData(this)"
                       class="text-gray-600 hover:text-blue-400 p-1 rounded transition-all hover:bg-blue-400/10"
@@ -6446,7 +6471,7 @@
 
     // 오늘 보고서 버튼 클릭 → Day Wrap-up 위저드 열기
     async function generateTodayFullReport() {
-      const today = getKSTDateString();
+      const today = homeDate || getKSTDateString();
 
       // 캐시된 보고서 확인
       try {
@@ -6497,7 +6522,10 @@
         }
       };
 
-      document.getElementById('wrapupDate').textContent = wrapupData.date;
+      const isToday = wrapupData.date === getKSTDateString();
+      document.getElementById('wrapupDate').textContent = isToday
+        ? '오늘의 하루를 의미있게 정리해보세요'
+        : `${wrapupData.date} 하루를 정리해보세요`;
       document.getElementById('dayWrapupModal').style.display = 'flex';
 
       // 데이터 로드
