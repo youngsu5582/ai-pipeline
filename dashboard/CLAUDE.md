@@ -60,7 +60,8 @@ npm start             # 프로덕션 실행
 | 이력 로드 | `loadHistory()` | index.html |
 | 통계 로드 | `loadStats()` | index.html |
 | 노트 로드 | `loadNotes()` | index.html (날짜 필터: `notesDate` 변수) |
-| 홈 대시보드 | `loadHomeDashboard()` | index.html |
+| 홈 대시보드 | `loadHomeDashboard()` | index.html (선택 날짜 기준 요약카드 갱신) |
+| 홈→탭 이동 | `navigateWithDate(tab, subTab)` | index.html (homeDate를 대상 탭에 전달) |
 | 통합 타임라인 | `loadTimeline()` | index.html (타입 필터, 시간 범위 슬라이더) |
 | 통합 검색 | `openGlobalSearch()` | index.html (Cmd+K, `/` 단축키) |
 | 오늘 요약 | `refreshTodaySummary()` | index.html |
@@ -85,6 +86,7 @@ npm start             # 프로덕션 실행
 - Slack Webhook 알림
 - Auto-fix 규칙
 - GitHub 멀티 계정 활동 수집 (Events API)
+- KST 타임존 헬퍼 - `getKSTDateString()` (Asia/Seoul, 모든 날짜 기본값에 사용)
 - Obsidian Daily Note 파싱 - `parseObsidianMemos(date)` 헬퍼 (한국어 시간 형식 지원)
 - 통합 타임라인 API (`/api/timeline`)
 - AI 인사이트 API (`/api/insights/suggestions`, `/api/insights/productivity`, `/api/insights/weekly-digest`)
@@ -105,6 +107,8 @@ npm start             # 프로덕션 실행
 | `morning-plans.json` | 하루 시작 계획 |
 | `session-aliases.json` | 세션 별칭 |
 | `weekly-digests.json` | 주간 다이제스트 |
+| `session-summaries.json` | 세션 요약 캐시 |
+| `daily-reports.json` | 일일/종합/하루마무리 보고서 캐시 |
 
 ### 데이터 흐름
 ```
@@ -125,8 +129,10 @@ Slack (webhooks)
 | POST | `/api/jobs/:id/run` | 작업 실행 |
 | GET | `/api/history?limit=N` | 실행 이력 (items 배열) |
 | GET | `/api/stats/summary?days=N` | 통계 요약 |
-| GET | `/api/today/summary` | 오늘 요약 (sessionsCount, jobsCount, successCount) |
-| GET | `/api/sessions` | Claude 세션 목록 |
+| GET | `/api/today/summary?date=YYYY-MM-DD` | 날짜별 요약 (sessionsCount, jobsCount, successCount, 기본=오늘) |
+| GET | `/api/sessions` | Claude 세션 목록 (hasSummary 포함) |
+| GET | `/api/sessions/:id/summary` | 캐시된 세션 요약 조회 |
+| GET | `/api/reports/daily?date=&type=` | 캐시된 일일 보고서 조회 |
 | GET | `/api/quick-memos?date=YYYY-MM-DD` | 메모 (날짜 필터 지원) |
 | GET | `/api/backlogs` | 백로그 |
 | GET | `/api/obsidian/daily-memos?date=YYYY-MM-DD` | Obsidian 시간별 메모 |

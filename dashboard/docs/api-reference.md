@@ -553,6 +553,60 @@ GET /api/tasks/events?clientId=client-123
 | task:progress | `{ taskId, progress, message }` | 작업 진행 상황 |
 | ping | - | 연결 유지 |
 
+## 세션 요약 API
+
+### 캐시된 세션 요약 조회
+
+```http
+GET /api/sessions/:id/summary?project={projectPath}
+```
+
+**응답**
+```json
+{
+  "summary": {
+    "id": "ss-abc123",
+    "sessionId": "abc123...",
+    "projectPath": "-Users-iyeongsu-ai-pipeline-dashboard",
+    "project": "dashboard",
+    "summary": "## 요약\n...",
+    "createdAt": "2026-02-07T10:30:00.000Z"
+  }
+}
+```
+
+요약이 없으면 `{ "summary": null }` 반환.
+
+### 세션 목록 (hasSummary 포함)
+
+`GET /api/sessions?date=YYYY-MM-DD` 응답의 각 세션 객체에 `hasSummary: boolean` 필드 포함.
+
+## 일일 보고서 API
+
+### 캐시된 보고서 조회
+
+```http
+GET /api/reports/daily?date=YYYY-MM-DD&type={type}
+```
+
+**파라미터**
+| 파라미터 | 필수 | 설명 |
+|---------|------|------|
+| date | 선택 | 날짜 필터 (YYYY-MM-DD) |
+| type | 선택 | `daily-report`, `full-daily-report`, `day-wrapup` |
+
+**응답 (date+type 지정)**
+```json
+{ "report": { "id": "dr-2026-02-07-day-wrapup", "date": "2026-02-07", "type": "day-wrapup", "report": "# 🌙 ...", "createdAt": "..." } }
+```
+
+**응답 (date만 지정)**
+```json
+{ "reports": [ ... ] }
+```
+
+보고서가 없으면 `{ "report": null }` 또는 `{ "reports": [] }` 반환.
+
 ## 에러 응답
 
 모든 API는 에러 시 다음 형식으로 응답합니다:

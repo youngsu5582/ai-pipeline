@@ -464,3 +464,41 @@ interface HourlyData {
   count: number;
 }
 ```
+
+## session-summaries.json 스키마
+
+`data/session-summaries.json` — Claude가 생성한 세션 요약 캐시.
+
+```typescript
+interface SessionSummary {
+  id: string;                // "ss-{sessionId}"
+  sessionId: string;         // UUID
+  projectPath: string;       // "-Users-iyeongsu-ai-pipeline-dashboard"
+  project: string;           // "dashboard"
+  summary: string;           // 마크다운 요약 본문
+  createdAt: string;         // ISO 8601
+}
+
+// 파일 구조: SessionSummary[]
+```
+
+## daily-reports.json 스키마
+
+`data/daily-reports.json` — 일일 보고서/종합 보고서/하루 마무리 캐시.
+
+```typescript
+interface DailyReport {
+  id: string;                // "dr-{date}-{type}"
+  date: string;              // "2026-02-07"
+  type: 'daily-report' | 'full-daily-report' | 'day-wrapup';
+  report: string;            // 마크다운 보고서 본문
+  sessionsCount?: number;
+  jobsCount?: number;
+  memosCount?: number;
+  hasGithub?: boolean;       // day-wrapup only
+  hasReflection?: boolean;   // day-wrapup only
+  createdAt: string;         // ISO 8601
+}
+
+// 파일 구조: DailyReport[]
+```

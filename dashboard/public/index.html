@@ -401,23 +401,23 @@
           <div id="homeJobsActive" class="text-3xl font-bold">-</div>
           <div id="homeJobsDesc" class="text-xs text-gray-500 mt-1">활성 작업</div>
         </div>
-        <div onclick="showTab('jobs'); setTimeout(()=>showJobSubTab('history'),50)" class="cursor-pointer bg-gradient-to-br from-green-900/40 to-green-800/20 border border-green-800/30 rounded-xl p-5 hover:border-green-600/50 hover:scale-[1.02] transition-all">
+        <div onclick="navigateWithDate('jobs', 'history')" class="cursor-pointer bg-gradient-to-br from-green-900/40 to-green-800/20 border border-green-800/30 rounded-xl p-5 hover:border-green-600/50 hover:scale-[1.02] transition-all">
           <div class="flex items-center justify-between mb-2">
-            <span class="text-sm text-gray-400">오늘 실행</span>
+            <span id="homeRunsLabel" class="text-sm text-gray-400">오늘 실행</span>
             <span class="text-green-400 text-lg">▶️</span>
           </div>
           <div id="homeTodayRuns" class="text-3xl font-bold">-</div>
           <div id="homeTodayRate" class="text-xs text-gray-500 mt-1">성공률 -</div>
         </div>
-        <div onclick="showTab('sessions')" class="cursor-pointer bg-gradient-to-br from-purple-900/40 to-purple-800/20 border border-purple-800/30 rounded-xl p-5 hover:border-purple-600/50 hover:scale-[1.02] transition-all">
+        <div onclick="navigateWithDate('sessions')" class="cursor-pointer bg-gradient-to-br from-purple-900/40 to-purple-800/20 border border-purple-800/30 rounded-xl p-5 hover:border-purple-600/50 hover:scale-[1.02] transition-all">
           <div class="flex items-center justify-between mb-2">
             <span class="text-sm text-gray-400">Claude 세션</span>
             <span class="text-purple-400 text-lg">🤖</span>
           </div>
           <div id="homeSessionsCount" class="text-3xl font-bold">-</div>
-          <div class="text-xs text-gray-500 mt-1">오늘</div>
+          <div id="homeSessionsLabel" class="text-xs text-gray-500 mt-1">오늘</div>
         </div>
-        <div onclick="showTab('notes')" class="cursor-pointer bg-gradient-to-br from-amber-900/40 to-amber-800/20 border border-amber-800/30 rounded-xl p-5 hover:border-amber-600/50 hover:scale-[1.02] transition-all">
+        <div onclick="navigateWithDate('notes')" class="cursor-pointer bg-gradient-to-br from-amber-900/40 to-amber-800/20 border border-amber-800/30 rounded-xl p-5 hover:border-amber-600/50 hover:scale-[1.02] transition-all">
           <div class="flex items-center justify-between mb-2">
             <span class="text-sm text-gray-400">메모 & 백로그</span>
             <span class="text-amber-400 text-lg">📋</span>
@@ -1711,6 +1711,12 @@
   <script>
     const API_BASE = '';
 
+    // KST 날짜 헬퍼 (Asia/Seoul)
+    function getKSTDateString(date) {
+      const d = date || new Date();
+      return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    }
+
     // ============ 비동기 작업 시스템 ============
     let eventSource = null;
     let clientId = `client-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
@@ -2215,10 +2221,39 @@
     let currentSummaryContent = '';
 
     function showSessionSummaryModal(result) {
+      currentSummaryContent = result.summary;
+      const createdAt = new Date().toLocaleString('ko-KR');
+
+      // 세션 상세 모달 내 요약 탭이 열려있으면 탭 구조 유지하며 업데이트
+      const summaryContentDiv = document.getElementById('sessionSummaryContent');
+      if (summaryContentDiv) {
+        summaryContentDiv.innerHTML = `
+          <div class="text-left">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs text-gray-500">생성: ${createdAt}</span>
+              <div class="flex gap-2">
+                <button onclick="copySummary()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">
+                  📋 복사
+                </button>
+                <button onclick="generateSessionSummary()" class="px-3 py-1.5 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-500 hover:to-teal-500 rounded text-xs font-medium">
+                  🔄 재생성
+                </button>
+              </div>
+            </div>
+            <div class="bg-gray-700/30 rounded-lg p-4 border border-gray-600/30 max-h-[50vh] overflow-auto custom-scrollbar">
+              <div class="prose prose-invert prose-sm max-w-none markdown-content">${renderMarkdown(result.summary)}</div>
+            </div>
+          </div>
+        `;
+        // 요약 탭으로 전환
+        switchSessionTab('summary');
+        showToast('세션 요약이 생성되었습니다', 'success');
+        return;
+      }
+
+      // 폴백: 모달 전체를 요약으로 표시
       const modal = document.getElementById('sessionDetailModal');
       const content = document.getElementById('sessionDetailContent');
-      currentSummaryContent = result.summary;
-
       content.innerHTML = `
         <div class="flex justify-between items-center mb-4">
           <div class="flex items-center gap-3">
@@ -2238,6 +2273,9 @@
         <div class="flex gap-2 mt-4">
           <button onclick="copySummary()" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">
             📋 복사
+          </button>
+          <button onclick="generateSessionSummary()" class="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-500 hover:to-teal-500 rounded-lg text-sm">
+            🔄 재생성
           </button>
         </div>
       `;
@@ -3224,6 +3262,23 @@
 
     // Tab & Filter
     let currentJobSubTab = 'list';
+
+    // 홈 카드 클릭 시 선택된 날짜를 해당 탭에 전달
+    function navigateWithDate(tab, subTab) {
+      const date = homeDate;
+      if (tab === 'sessions') {
+        sessionsInitialized = false; // 날짜를 직접 설정하기 위해 리셋
+      }
+      showTab(tab);
+      if (tab === 'sessions') {
+        document.getElementById('sessionsDate').value = date;
+        loadSessions();
+      } else if (tab === 'notes') {
+        setNotesDate(date);
+      } else if (tab === 'jobs' && subTab === 'history') {
+        setTimeout(() => showJobSubTab('history'), 50);
+      }
+    }
 
     function showTab(tab) {
       document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -4581,7 +4636,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `ai-pipeline-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `ai-pipeline-backup-${getKSTDateString()}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -4775,7 +4830,7 @@
     function initSessionsTab() {
       if (!sessionsInitialized) {
         // 오늘 날짜로 초기화
-        const today = new Date().toISOString().split('T')[0];
+        const today = getKSTDateString();
         document.getElementById('sessionsDate').value = today;
 
         // 프로젝트 목록 로드
@@ -4802,7 +4857,7 @@
 
     async function loadSessions() {
       const date = document.getElementById('sessionsDate').value ||
-        new Date().toISOString().split('T')[0];
+        getKSTDateString();
       const project = document.getElementById('sessionsProject').value;
 
       const params = new URLSearchParams({ date });
@@ -4847,6 +4902,7 @@
               <span class="text-sm text-gray-400">
                 ${new Date(s.modifiedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
               </span>
+              ${s.hasSummary ? '<span class="text-green-400 text-sm" title="요약 생성됨">📋</span>' : ''}
               <button data-session-id="${s.id}" data-alias="${escapeHtml(s.alias || '').replace(/'/g, '&#39;')}"
                       onclick="event.stopPropagation(); editSessionAliasFromData(this)"
                       class="text-gray-600 hover:text-blue-400 p-1 rounded transition-all hover:bg-blue-400/10"
@@ -5197,16 +5253,19 @@
 
           <!-- 요약 탭 -->
           <div id="sessionSummaryPane" class="hidden">
-            <div class="text-center py-8" id="sessionSummaryContent">
-              <p class="text-gray-400 mb-4">Claude가 이 세션의 대화를 분석하여 요약을 생성합니다.</p>
-              <button onclick="generateSessionSummary()" class="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-500 hover:to-teal-500 rounded-lg text-sm font-medium transition-all">
-                ✨ 요약 생성하기
-              </button>
+            <div id="sessionSummaryContent">
+              <div class="flex items-center justify-center gap-2 text-gray-500 py-8">
+                <div class="w-4 h-4 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin"></div>
+                <span>요약 확인 중...</span>
+              </div>
             </div>
           </div>
         `;
 
         modal.style.display = 'flex';
+
+        // 캐시된 요약 확인
+        checkSessionSummaryCache(sessionId, projectPath);
       } catch (err) {
         console.error('세션 상세 로드 실패:', err);
         showToast('세션 상세 로드 실패', 'error');
@@ -5244,6 +5303,59 @@
       }
       if (paneElements[tab]) {
         paneElements[tab].classList.remove('hidden');
+      }
+    }
+
+    // 세션 요약 캐시 확인
+    async function checkSessionSummaryCache(sessionId, projectPath) {
+      const contentDiv = document.getElementById('sessionSummaryContent');
+      if (!contentDiv) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/summary?project=${encodeURIComponent(projectPath)}`);
+        const data = await res.json();
+
+        if (data.summary) {
+          currentSummaryContent = data.summary.summary;
+          const createdAt = new Date(data.summary.createdAt).toLocaleString('ko-KR');
+          contentDiv.innerHTML = `
+            <div class="text-left">
+              <div class="flex items-center justify-between mb-3">
+                <span class="text-xs text-gray-500">생성: ${createdAt}</span>
+                <div class="flex gap-2">
+                  <button onclick="copySummary()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">
+                    📋 복사
+                  </button>
+                  <button onclick="generateSessionSummary()" class="px-3 py-1.5 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-500 hover:to-teal-500 rounded text-xs font-medium">
+                    🔄 재생성
+                  </button>
+                </div>
+              </div>
+              <div class="bg-gray-700/30 rounded-lg p-4 border border-gray-600/30 max-h-[50vh] overflow-auto custom-scrollbar">
+                <div class="prose prose-invert prose-sm max-w-none markdown-content">${renderMarkdown(data.summary.summary)}</div>
+              </div>
+            </div>
+          `;
+        } else {
+          contentDiv.innerHTML = `
+            <div class="text-center py-8">
+              <p class="text-gray-400 mb-4">Claude가 이 세션의 대화를 분석하여 요약을 생성합니다.</p>
+              <button onclick="generateSessionSummary()" class="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-500 hover:to-teal-500 rounded-lg text-sm font-medium transition-all">
+                ✨ 요약 생성하기
+              </button>
+            </div>
+          `;
+        }
+      } catch (err) {
+        console.error('요약 캐시 확인 실패:', err);
+        contentDiv.innerHTML = `
+          <div class="text-center py-8">
+            <p class="text-gray-400 mb-4">Claude가 이 세션의 대화를 분석하여 요약을 생성합니다.</p>
+            <button onclick="generateSessionSummary()" class="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-500 hover:to-teal-500 rounded-lg text-sm font-medium transition-all">
+              ✨ 요약 생성하기
+            </button>
+          </div>
+        `;
       }
     }
 
@@ -5327,10 +5439,52 @@
       }
     }
 
+    // 캐시된 보고서 확인 프롬프트
+    function showCachedReportPrompt(report) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('sessionDetailModal');
+        const content = document.getElementById('sessionDetailContent');
+        const typeLabel = {
+          'day-wrapup': '🌙 하루 마무리',
+          'full-daily-report': '📊 종합 보고서',
+          'daily-report': '📊 일일 보고서',
+          'weekly-digest': '📊 주간 다이제스트'
+        }[report.type] || '보고서';
+
+        content.innerHTML = `
+          <div class="text-center py-8">
+            <div class="text-4xl mb-4">📄</div>
+            <h3 class="text-lg font-bold mb-2">기존 보고서가 있습니다</h3>
+            <p class="text-gray-400 text-sm mb-1">${typeLabel} · ${report.date}</p>
+            <p class="text-gray-500 text-xs mb-6">생성: ${new Date(report.createdAt).toLocaleString('ko-KR')}</p>
+            <div class="flex gap-3 justify-center">
+              <button id="viewCachedBtn" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-lg text-sm font-medium transition-all">
+                📖 기존 보고서 보기
+              </button>
+              <button id="regenerateBtn" class="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-all">
+                🔄 새로 생성하기
+              </button>
+            </div>
+          </div>
+        `;
+
+        modal.style.display = 'flex';
+
+        document.getElementById('viewCachedBtn').onclick = () => {
+          modal.style.display = 'none';
+          resolve(true);
+        };
+        document.getElementById('regenerateBtn').onclick = () => {
+          modal.style.display = 'none';
+          resolve(false);
+        };
+      });
+    }
+
     // ============ Day Wrap-up Wizard ============
     let wrapupStep = 1;
     let wrapupData = {
-      date: new Date().toISOString().split('T')[0],
+      date: getKSTDateString(),
       sessions: [],
       selectedSessions: [],
       githubActivity: null,
@@ -5347,9 +5501,41 @@
 
     // 오늘 보고서 버튼 클릭 → Day Wrap-up 위저드 열기
     async function generateTodayFullReport() {
+      const today = getKSTDateString();
+
+      // 캐시된 보고서 확인
+      try {
+        const cacheRes = await fetch(`${API_BASE}/api/reports/daily?date=${today}`);
+        const cacheData = await cacheRes.json();
+        const cachedReports = cacheData.reports || [];
+
+        if (cachedReports.length > 0) {
+          const priority = ['day-wrapup', 'full-daily-report', 'daily-report'];
+          let bestReport = null;
+          for (const type of priority) {
+            const found = cachedReports.find(r => r.type === type);
+            if (found) { bestReport = found; break; }
+          }
+
+          if (bestReport) {
+            const useCache = await showCachedReportPrompt(bestReport);
+            if (useCache) {
+              if (bestReport.type === 'day-wrapup') {
+                showDayWrapupResult(bestReport);
+              } else {
+                showFullReportModal(bestReport);
+              }
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('캐시 보고서 확인 실패:', e);
+      }
+
       wrapupStep = 1;
       wrapupData = {
-        date: new Date().toISOString().split('T')[0],
+        date: today,
         sessions: [],
         selectedSessions: [],
         githubActivity: null,
@@ -6114,14 +6300,14 @@
       checkMorningPlanExists();
     }
 
-    let homeDate = new Date().toISOString().split('T')[0];
+    let homeDate = getKSTDateString();
 
     function initHomeDate() {
       updateHomeDateUI();
     }
 
     function updateHomeDateUI() {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getKSTDateString();
       const d = new Date(homeDate + 'T00:00:00');
       const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
       const isToday = homeDate === today;
@@ -6144,7 +6330,7 @@
     }
 
     function setHomeDate(dateStr) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getKSTDateString();
       if (dateStr > today) dateStr = today;
       homeDate = dateStr;
       updateHomeDateUI();
@@ -6154,24 +6340,30 @@
     function shiftHomeDate(delta) {
       const d = new Date(homeDate + 'T00:00:00');
       d.setDate(d.getDate() + delta);
-      setHomeDate(d.toISOString().split('T')[0]);
+      setHomeDate(getKSTDateString(d));
     }
 
     function setHomeToday() {
-      setHomeDate(new Date().toISOString().split('T')[0]);
+      setHomeDate(getKSTDateString());
     }
 
     async function loadHomeDashboard() {
       try {
         const dateParam = homeDate;
-        const today = new Date().toISOString().split('T')[0];
+        const today = getKSTDateString();
         const isToday = dateParam === today;
         updateHomeDateUI();
 
+        // 날짜에 따른 라벨 업데이트
+        const runsLabel = document.getElementById('homeRunsLabel');
+        const sessionsLabel = document.getElementById('homeSessionsLabel');
+        if (runsLabel) runsLabel.textContent = isToday ? '오늘 실행' : `${dateParam.slice(5)} 실행`;
+        if (sessionsLabel) sessionsLabel.textContent = isToday ? '오늘' : dateParam.slice(5);
+
         const [summaryRes, jobsRes, historyRes, memosRes, backlogsRes, obsidianRes] = await Promise.all([
-          isToday ? fetch(`${API_BASE}/api/today/summary`).catch(() => null) : null,
+          fetch(`${API_BASE}/api/today/summary?date=${dateParam}`).catch(() => null),
           fetch(`${API_BASE}/api/jobs`).catch(() => null),
-          fetch(`${API_BASE}/api/history?limit=5${!isToday ? `&startDate=${dateParam}&endDate=${dateParam}` : ''}`).catch(() => null),
+          fetch(`${API_BASE}/api/history?limit=5&startDate=${dateParam}&endDate=${dateParam}`).catch(() => null),
           fetch(`${API_BASE}/api/quick-memos?date=${dateParam}`).catch(() => null),
           fetch(`${API_BASE}/api/backlogs`).catch(() => null),
           fetch(`${API_BASE}/api/obsidian/daily-memos?date=${dateParam}`).catch(() => null)
@@ -6296,7 +6488,7 @@
     }
 
     async function loadSuggestions() {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getKSTDateString();
       if (homeDate !== today) {
         document.getElementById('homeSuggestions').innerHTML = '';
         return;
@@ -6498,6 +6690,41 @@
     // ============ 주간 다이제스트 ============
 
     async function generateWeeklyDigest() {
+      // 현재 주 weekStart 계산
+      const today = getKSTDateString();
+      const d = new Date(today + 'T00:00:00');
+      const day = d.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      d.setDate(d.getDate() - diff);
+      const weekStart = getKSTDateString(d);
+
+      // 캐시 확인
+      try {
+        const cacheRes = await fetch(`${API_BASE}/api/insights/weekly-digest?week=${weekStart}`);
+        const cacheData = await cacheRes.json();
+
+        if (cacheData.digest) {
+          const useCache = await showCachedReportPrompt({
+            type: 'weekly-digest',
+            date: `${cacheData.digest.weekStart} ~ ${cacheData.digest.weekEnd}`,
+            createdAt: cacheData.digest.createdAt
+          });
+
+          if (useCache) {
+            showWeeklyDigestModal({
+              markdown: cacheData.digest.markdown,
+              weekStart: cacheData.digest.weekStart,
+              weekEnd: cacheData.digest.weekEnd,
+              stats: cacheData.digest.stats
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        console.error('주간 다이제스트 캐시 확인 실패:', e);
+      }
+
+      // 새로 생성
       try {
         const res = await fetch(`${API_BASE}/api/insights/weekly-digest`, {
           method: 'POST',
@@ -6788,7 +7015,7 @@
         <span class="text-xs text-gray-600 w-14 flex-shrink-0 mt-0.5">${time}</span>
         <span class="flex-shrink-0">${icons[item.icon] || '📌'}</span>
         <div class="flex-1 min-w-0">
-          <div class="text-sm text-gray-300 truncate">${escapeHtml(item.title || '')}</div>
+          <div class="text-sm text-gray-300 truncate">${escapeHtml(item.title || '')}${item.meta?.hasSummary ? ' <span class="text-green-400" title="요약 생성됨">📋</span>' : ''}</div>
           ${item.subtitle ? `<div class="text-xs text-gray-600 truncate">${escapeHtml(item.subtitle)}</div>` : ''}
         </div>
       </div>`;
@@ -7153,15 +7380,15 @@
     // ============ 노트 & 백로그 탭 ============
     let notesFilter = 'all';
     let notesData = { memos: [], backlogs: [] };
-    let notesDate = new Date().toISOString().split('T')[0]; // 오늘
+    let notesDate = getKSTDateString(); // 오늘
 
     function initNotesDate() {
-      if (!notesDate) notesDate = new Date().toISOString().split('T')[0];
+      if (!notesDate) notesDate = getKSTDateString();
       updateNotesDateUI();
     }
 
     function updateNotesDateUI() {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getKSTDateString();
       const d = new Date(notesDate + 'T00:00:00');
       const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
       const isToday = notesDate === today;
@@ -7185,7 +7412,7 @@
     }
 
     function setNotesDate(dateStr) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getKSTDateString();
       if (dateStr > today) dateStr = today;
       notesDate = dateStr;
       updateNotesDateUI();
@@ -7195,11 +7422,11 @@
     function shiftNotesDate(delta) {
       const d = new Date(notesDate + 'T00:00:00');
       d.setDate(d.getDate() + delta);
-      setNotesDate(d.toISOString().split('T')[0]);
+      setNotesDate(getKSTDateString(d));
     }
 
     function setNotesToday() {
-      setNotesDate(new Date().toISOString().split('T')[0]);
+      setNotesDate(getKSTDateString());
     }
 
     function setNotesFilter(filter) {
@@ -7214,7 +7441,7 @@
 
     async function loadNotes() {
       try {
-        const targetDate = notesDate || new Date().toISOString().split('T')[0];
+        const targetDate = notesDate || getKSTDateString();
         const [memosRes, backlogsRes, obsidianRes] = await Promise.all([
           fetch(`${API_BASE}/api/quick-memos?date=${targetDate}`),
           fetch(`${API_BASE}/api/backlogs`),
@@ -7303,7 +7530,7 @@
         }
 
         if (recentMemos.length > 0) {
-          const today = new Date().toISOString().split('T')[0];
+          const today = getKSTDateString();
           const memoLabel = notesDate === today ? '📝 최근 메모' : `📝 ${notesDate} 메모`;
           html += `<div>
             <div class="flex items-center gap-2 mb-3">
@@ -7437,7 +7664,7 @@
 
     // 페이지 로드 시 & 저장 후 버튼 상태 업데이트
     async function checkMorningPlanExists() {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getKSTDateString();
       try {
         const res = await fetch(`${API_BASE}/api/morning-plan?date=${today}`);
         const data = await res.json();
@@ -7450,7 +7677,7 @@
     }
 
     async function openMorningStart() {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getKSTDateString();
       morningData = {
         date: today,
         tasks: [],

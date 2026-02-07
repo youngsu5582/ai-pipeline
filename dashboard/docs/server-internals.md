@@ -651,9 +651,30 @@ app.post('/api/validate-cron', ...)
 app.get('/api/health', ...)
 app.get('/api/categories', ...)
 
+// === 보고서 캐시 ===
+app.get('/api/sessions/:id/summary', ...)  // 캐시된 세션 요약
+app.get('/api/reports/daily', ...)         // 캐시된 일일 보고서
+
 // === SSE ===
 app.get('/api/tasks/events', ...)  // 실시간 이벤트 스트림
 ```
+
+## 비동기 작업 처리 (Task Queue)
+
+`POST /api/tasks`로 생성된 비동기 작업은 `processTask(task)` → 타입별 핸들러로 디스패치.
+
+| 타입 | 핸들러 | 저장 위치 |
+|------|--------|----------|
+| `ask` | `processAskTask` | 저장 안함 |
+| `daily-report` | `processDailyReportTask` | `data/daily-reports.json` |
+| `session-summary` | `processSessionSummaryTask` | `data/session-summaries.json` |
+| `full-daily-report` | `processFullDailyReportTask` | `data/daily-reports.json` |
+| `day-wrapup` | `processDayWrapupTask` | `data/daily-reports.json` |
+| `weekly-digest` | `processWeeklyDigestTask` | `data/weekly-digests.json` + Obsidian |
+
+모든 핸들러는 Claude CLI (`~/.local/bin/claude -p`)를 `spawn`으로 실행하며, `stdio: ['ignore', 'pipe', 'pipe']` 옵션 필수 (stdin을 닫아야 CLI가 응답).
+
+완료 시 결과를 SSE `task:completed` 이벤트로 클라이언트에 전달하고, 파일에도 영속화 (upsert 패턴).
 
 ## 초기화 순서
 

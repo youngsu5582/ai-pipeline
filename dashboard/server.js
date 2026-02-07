@@ -8,6 +8,12 @@ const https = require('https');
 const http = require('http');
 const os = require('os');
 
+// KST 날짜 헬퍼 (Asia/Seoul)
+function getKSTDateString(date) {
+  const d = date || new Date();
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
 // Claude 세션 디렉토리
 const CLAUDE_PROJECTS = path.join(os.homedir(), '.claude', 'projects');
 
@@ -1329,7 +1335,7 @@ app.get('/api/stats/trend', (req, res) => {
   for (let i = days - 1; i >= 0; i--) {
     const date = new Date();
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = getKSTDateString(date);
     trend.push({
       date: dateStr,
       success: 0,
@@ -1867,7 +1873,7 @@ async function processAskTask(task) {
 // 일일 보고서 처리
 async function processDailyReportTask(task) {
   const { date } = task.payload;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   updateTaskProgress(task, 10, '세션 데이터 수집 중...');
 
@@ -1983,6 +1989,26 @@ ${JSON.stringify(sessionSummaries, null, 2)}
     report
   });
 
+  // 파일에 저장
+  try {
+    const reports = loadDailyReports();
+    const record = {
+      id: `dr-${targetDate}-daily-report`,
+      date: targetDate,
+      type: 'daily-report',
+      sessionsCount: sessions.length,
+      report,
+      createdAt: new Date().toISOString()
+    };
+    const existIdx = reports.findIndex(r => r.date === targetDate && r.type === 'daily-report');
+    if (existIdx >= 0) reports[existIdx] = record;
+    else reports.push(record);
+    saveDailyReports(reports);
+    console.log(`[DailyReport] 저장 완료: ${targetDate}`);
+  } catch (e) {
+    console.error('[DailyReport] 저장 실패:', e.message);
+  }
+
   return {
     date: targetDate,
     sessionsCount: sessions.length,
@@ -2090,6 +2116,26 @@ ${userMessages.join('\n---\n')}
 
   updateTaskProgress(task, 90, '요약 완료!');
 
+  // 파일에 저장
+  try {
+    const summaries = loadSessionSummaries();
+    const record = {
+      id: `ss-${sessionId}`,
+      sessionId,
+      projectPath: task.payload.projectPath,
+      project: sessionData.project,
+      summary,
+      createdAt: new Date().toISOString()
+    };
+    const existIdx = summaries.findIndex(s => s.sessionId === sessionId);
+    if (existIdx >= 0) summaries[existIdx] = record;
+    else summaries.push(record);
+    saveSessionSummaries(summaries);
+    console.log(`[SessionSummary] 저장 완료: ${sessionId}`);
+  } catch (e) {
+    console.error('[SessionSummary] 저장 실패:', e.message);
+  }
+
   return {
     sessionId,
     project: sessionData.project,
@@ -2100,7 +2146,7 @@ ${userMessages.join('\n---\n')}
 // 종합 일일 보고서 처리 (세션 + 메모 + 작업 이력)
 async function processFullDailyReportTask(task) {
   const { date } = task.payload;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   updateTaskProgress(task, 5, '데이터 수집 중...');
 
@@ -2231,6 +2277,28 @@ ${quickMemos.map(m => m?.content || m?.text || '').join('\n')}
 
   updateTaskProgress(task, 90, '보고서 생성 완료!');
 
+  // 파일에 저장
+  try {
+    const reports = loadDailyReports();
+    const record = {
+      id: `dr-${targetDate}-full-daily-report`,
+      date: targetDate,
+      type: 'full-daily-report',
+      sessionsCount: sessions.length,
+      jobsCount: jobsToday.length,
+      memosCount: quickMemos.length,
+      report,
+      createdAt: new Date().toISOString()
+    };
+    const existIdx = reports.findIndex(r => r.date === targetDate && r.type === 'full-daily-report');
+    if (existIdx >= 0) reports[existIdx] = record;
+    else reports.push(record);
+    saveDailyReports(reports);
+    console.log(`[FullDailyReport] 저장 완료: ${targetDate}`);
+  } catch (e) {
+    console.error('[FullDailyReport] 저장 실패:', e.message);
+  }
+
   return {
     date: targetDate,
     sessionsCount: sessions.length,
@@ -2243,7 +2311,7 @@ ${quickMemos.map(m => m?.content || m?.text || '').join('\n')}
 // Day Wrap-up 보고서 처리 (사용자가 선택한 데이터로 의미있는 하루 마무리)
 async function processDayWrapupTask(task) {
   const { date, selectedSessions, githubActivity, memos, morningPlan, reflection } = task.payload;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   updateTaskProgress(task, 10, '선택된 세션 데이터 분석 중...');
 
@@ -2421,6 +2489,29 @@ ${reflection ? `
 
   updateTaskProgress(task, 95, '하루 마무리 완료!');
 
+  // 파일에 저장
+  try {
+    const reports = loadDailyReports();
+    const record = {
+      id: `dr-${targetDate}-day-wrapup`,
+      date: targetDate,
+      type: 'day-wrapup',
+      sessionsCount: sessionDetails.length,
+      memosCount: todayMemos.length,
+      hasGithub: !!githubActivity,
+      hasReflection: !!reflection,
+      report,
+      createdAt: new Date().toISOString()
+    };
+    const existIdx = reports.findIndex(r => r.date === targetDate && r.type === 'day-wrapup');
+    if (existIdx >= 0) reports[existIdx] = record;
+    else reports.push(record);
+    saveDailyReports(reports);
+    console.log(`[DayWrapup] 저장 완료: ${targetDate}`);
+  } catch (e) {
+    console.error('[DayWrapup] 저장 실패:', e.message);
+  }
+
   return {
     date: targetDate,
     sessionsCount: sessionDetails.length,
@@ -2433,11 +2524,11 @@ ${reflection ? `
 
 // --- 주간 다이제스트 태스크 처리 ---
 async function processWeeklyDigestTask(task) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getKSTDateString();
   const weekStart = task.payload.weekStart || getWeekStart(today);
   const weekEndDate = new Date(weekStart + 'T00:00:00');
   weekEndDate.setDate(weekEndDate.getDate() + 6);
-  const weekEnd = weekEndDate.toISOString().split('T')[0];
+  const weekEnd = getKSTDateString(weekEndDate);
   const dates = getDateRange(weekStart, weekEnd);
 
   updateTaskProgress(task, 10, '주간 데이터 수집 중...');
@@ -2666,7 +2757,7 @@ function findSessions(targetDate, projectFilter) {
       for (const file of files) {
         const filePath = path.join(projectPath, file);
         const fileStat = fs.statSync(filePath);
-        const mtime = fileStat.mtime.toISOString().split('T')[0];
+        const mtime = getKSTDateString(fileStat.mtime);
         if (mtime === targetDate) {
           // 첫 메시지 추출 (처음 20줄만 읽기)
           let firstMessage = '';
@@ -2881,7 +2972,7 @@ function getObsidianPaths() {
 function appendToObsidianSection(sectionHeader, content, date) {
   try {
     const { vaultPath, dailyFolder } = getObsidianPaths();
-    const targetDate = date || new Date().toISOString().split('T')[0];
+    const targetDate = date || getKSTDateString();
     const dailyNotePath = path.join(vaultPath, dailyFolder, `${targetDate}.md`);
 
     if (!fs.existsSync(dailyNotePath)) {
@@ -3014,7 +3105,7 @@ function saveMorningPlans(plans) {
 // GET /api/morning-plan - 날짜별 모닝 플랜 조회
 app.get('/api/morning-plan', (req, res) => {
   const { date } = req.query;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
   const plans = loadMorningPlans();
   const plan = plans.find(p => p.date === targetDate);
   res.json({ plan: plan || null });
@@ -3023,7 +3114,7 @@ app.get('/api/morning-plan', (req, res) => {
 // POST /api/morning-plan - 모닝 플랜 저장
 app.post('/api/morning-plan', (req, res) => {
   const { tasks, additionalTasks, goals, focusTime, motto, markdown } = req.body;
-  const today = new Date().toISOString().split('T')[0];
+  const today = getKSTDateString();
 
   const plans = loadMorningPlans();
 
@@ -3240,7 +3331,7 @@ function parseObsidianMemos(targetDate) {
 // GET /api/obsidian/daily-memos - Obsidian Daily Note 메모 조회
 app.get('/api/obsidian/daily-memos', (req, res) => {
   const { date } = req.query;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   try {
     const memos = parseObsidianMemos(targetDate);
@@ -3572,7 +3663,7 @@ async function fetchGithubEventsForAccount(username, targetDate) {
 // GET /api/github/activity - 오늘의 GitHub 활동 조회 (다중 계정)
 app.get('/api/github/activity', async (req, res) => {
   const { date } = req.query;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   try {
     const accounts = await getGhAccounts();
@@ -3639,7 +3730,7 @@ app.get('/api/github/activity', async (req, res) => {
 
 // GET /api/timeline - 통합 타임라인
 app.get('/api/timeline', async (req, res) => {
-  const date = req.query.date || new Date().toISOString().split('T')[0];
+  const date = req.query.date || getKSTDateString();
   const items = [];
 
   // 1. 작업 이력
@@ -3660,6 +3751,8 @@ app.get('/api/timeline', async (req, res) => {
   // 2. Claude 세션
   try {
     const sessions = findSessions(date);
+    const summaries = loadSessionSummaries();
+    const summaryIds = new Set(summaries.map(s => s.sessionId));
     sessions.forEach(s => {
       items.push({
         id: `session-${s.id}`,
@@ -3669,7 +3762,7 @@ app.get('/api/timeline', async (req, res) => {
         subtitle: s.alias ? `${s.project} / ${s.firstMessage?.substring(0, 50) || ''}` : (s.firstMessage?.substring(0, 60) || ''),
         icon: 'session',
         color: 'purple',
-        meta: { sessionId: s.id, projectPath: s.projectPath }
+        meta: { sessionId: s.id, projectPath: s.projectPath, hasSummary: summaryIds.has(s.id) }
       });
     });
   } catch (e) { /* ignore */ }
@@ -3829,7 +3922,7 @@ app.get('/api/search', (req, res) => {
       for (let i = 0; i < 7; i++) {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
+        const dateStr = getKSTDateString(d);
         const memos = parseObsidianMemos(dateStr);
         memos.filter(m => m.content?.toLowerCase().includes(query)).forEach(m => {
           results.push({
@@ -3851,7 +3944,7 @@ app.get('/api/search', (req, res) => {
       for (let i = 0; i < 7; i++) {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
+        const dateStr = getKSTDateString(d);
         const sessions = findSessions(dateStr);
         sessions.filter(s =>
           s.alias?.toLowerCase().includes(query) ||
@@ -3917,10 +4010,18 @@ app.get('/api/search', (req, res) => {
 // GET /api/sessions - 세션 목록 조회
 app.get('/api/sessions', (req, res) => {
   const { date, project } = req.query;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   try {
     const sessions = findSessions(targetDate, project);
+
+    // 요약 생성 여부 표시
+    const summaries = loadSessionSummaries();
+    const summaryIds = new Set(summaries.map(s => s.sessionId));
+    for (const s of sessions) {
+      s.hasSummary = summaryIds.has(s.id);
+    }
+
     res.json({ sessions, date: targetDate });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3999,6 +4100,41 @@ app.delete('/api/sessions/:id', (req, res) => {
   }
 });
 
+// GET /api/sessions/:id/summary - 캐시된 세션 요약 조회
+app.get('/api/sessions/:id/summary', (req, res) => {
+  const sessionId = req.params.id;
+  try {
+    const summaries = loadSessionSummaries();
+    const summary = summaries.find(s => s.sessionId === sessionId);
+    res.json({ summary: summary || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/reports/daily - 캐시된 일일 보고서 조회
+app.get('/api/reports/daily', (req, res) => {
+  const { date, type } = req.query;
+  try {
+    const reports = loadDailyReports();
+
+    if (date && type) {
+      const report = reports.find(r => r.date === date && r.type === type);
+      return res.json({ report: report || null });
+    }
+
+    if (date) {
+      const dateReports = reports.filter(r => r.date === date);
+      return res.json({ reports: dateReports });
+    }
+
+    // 최근 30개
+    res.json({ reports: reports.slice(-30).reverse() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/sessions/:id/alias - 세션 별명 설정
 app.put('/api/sessions/:id/alias', (req, res) => {
   const { id } = req.params;
@@ -4046,7 +4182,7 @@ app.get('/api/sessions/:id/markdown', (req, res) => {
     const markdown = sessionToMarkdown(data);
 
     if (download === 'true') {
-      const filename = `claude-session-${data.project}-${new Date().toISOString().split('T')[0]}.md`;
+      const filename = `claude-session-${data.project}-${getKSTDateString()}.md`;
       res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(markdown);
@@ -4089,7 +4225,7 @@ app.post('/api/sessions/:id/export-obsidian', (req, res) => {
       fs.mkdirSync(sessionDir, { recursive: true });
     }
 
-    const filename = `${data.project}-${date.toISOString().split('T')[0]}-${id.substring(0, 8)}.md`;
+    const filename = `${data.project}-${getKSTDateString(date)}-${id.substring(0, 8)}.md`;
     const filePath = path.join(sessionDir, filename);
 
     fs.writeFileSync(filePath, markdown, 'utf8');
@@ -4112,7 +4248,7 @@ const dailyReportCache = new Map();
 // POST /api/sessions/daily-report - Claude로 일일 보고서 생성
 app.post('/api/sessions/daily-report', async (req, res) => {
   const { date } = req.body;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   // 캐시 확인
   if (dailyReportCache.has(targetDate)) {
@@ -4229,7 +4365,7 @@ ${JSON.stringify(sessionSummaries, null, 2)}
 // GET /api/sessions/daily-report/download - 보고서 다운로드
 app.get('/api/sessions/daily-report/download', async (req, res) => {
   const { date } = req.query;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   try {
     let report;
@@ -4253,7 +4389,7 @@ app.get('/api/sessions/daily-report/download', async (req, res) => {
 // POST /api/sessions/daily-report/obsidian - 보고서 옵시디언 저장
 app.post('/api/sessions/daily-report/obsidian', async (req, res) => {
   const { date } = req.body;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   try {
     let report;
@@ -4292,7 +4428,7 @@ app.post('/api/sessions/daily-report/obsidian', async (req, res) => {
 // POST /api/sessions/export-all - 전체 세션 옵시디언 내보내기
 app.post('/api/sessions/export-all', async (req, res) => {
   const { date } = req.body;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || getKSTDateString();
 
   try {
     const sessions = findSessions(targetDate);
@@ -4332,22 +4468,22 @@ app.post('/api/sessions/export-all', async (req, res) => {
   }
 });
 
-// GET /api/today/summary - 오늘 요약
+// GET /api/today/summary - 요약 (날짜 파라미터 지원)
 app.get('/api/today/summary', (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+  const targetDate = req.query.date || getKSTDateString();
 
   try {
-    const sessions = findSessions(today);
-    const jobsToday = jobHistory.filter(h =>
-      h.startTime?.startsWith(today)
+    const sessions = findSessions(targetDate);
+    const jobsForDate = jobHistory.filter(h =>
+      h.startTime?.startsWith(targetDate)
     );
 
     res.json({
-      date: today,
+      date: targetDate,
       sessionsCount: sessions.length,
-      jobsCount: jobsToday.length,
-      successCount: jobsToday.filter(j => j.status === 'success').length,
-      failedCount: jobsToday.filter(j => j.status === 'failed').length
+      jobsCount: jobsForDate.length,
+      successCount: jobsForDate.filter(j => j.status === 'success').length,
+      failedCount: jobsForDate.filter(j => j.status === 'failed').length
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4376,7 +4512,7 @@ process.on('uncaughtException', (err) => {
 // --- 2.3 스마트 서제스션 ---
 function generateSuggestions() {
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  const today = getKSTDateString(now);
   const hour = now.getHours();
   const minute = now.getMinutes();
   const dayOfWeek = now.getDay(); // 0=일, 1=월 ... 6=토
@@ -4505,7 +4641,7 @@ function findSessionsBulk(dateSet) {
               allSessions.push({
                 project: projectName,
                 modifiedAt: fileStat.mtime.toISOString(),
-                date: fileStat.mtime.toISOString().split('T')[0]
+                date: getKSTDateString(fileStat.mtime)
               });
             } catch { /* skip */ }
           }
@@ -4534,7 +4670,7 @@ app.get('/api/insights/productivity', async (req, res) => {
 
     const dates = [];
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      dates.push(d.toISOString().split('T')[0]);
+      dates.push(getKSTDateString(d));
     }
     const dateSet = new Set(dates);
 
@@ -4708,18 +4844,54 @@ function saveWeeklyDigests(digests) {
   fs.writeFileSync(WEEKLY_DIGESTS_FILE, JSON.stringify(digests, null, 2));
 }
 
+// --- Session Summaries ---
+const SESSION_SUMMARIES_FILE = path.join(__dirname, 'data', 'session-summaries.json');
+
+function loadSessionSummaries() {
+  try {
+    if (fs.existsSync(SESSION_SUMMARIES_FILE)) {
+      return JSON.parse(fs.readFileSync(SESSION_SUMMARIES_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  return [];
+}
+
+function saveSessionSummaries(summaries) {
+  const dir = path.dirname(SESSION_SUMMARIES_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(SESSION_SUMMARIES_FILE, JSON.stringify(summaries, null, 2));
+}
+
+// --- Daily Reports (daily-report, full-daily-report, day-wrapup) ---
+const DAILY_REPORTS_FILE = path.join(__dirname, 'data', 'daily-reports.json');
+
+function loadDailyReports() {
+  try {
+    if (fs.existsSync(DAILY_REPORTS_FILE)) {
+      return JSON.parse(fs.readFileSync(DAILY_REPORTS_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  return [];
+}
+
+function saveDailyReports(reports) {
+  const dir = path.dirname(DAILY_REPORTS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(DAILY_REPORTS_FILE, JSON.stringify(reports, null, 2));
+}
+
 function getWeekStart(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   const day = d.getDay(); // 0=일
   const diff = day === 0 ? 6 : day - 1; // 월요일 기준
   d.setDate(d.getDate() - diff);
-  return d.toISOString().split('T')[0];
+  return getKSTDateString(d);
 }
 
 function getDateRange(start, end) {
   const dates = [];
   for (let d = new Date(start + 'T00:00:00'); d <= new Date(end + 'T00:00:00'); d.setDate(d.getDate() + 1)) {
-    dates.push(d.toISOString().split('T')[0]);
+    dates.push(getKSTDateString(d));
   }
   return dates;
 }
