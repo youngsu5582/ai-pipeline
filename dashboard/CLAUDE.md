@@ -40,7 +40,7 @@ npm start             # 프로덕션 실행
 | 실행이력 | `jobSubPanel-history` | 필터 + 테이블 + 페이지네이션 |
 | 통계 | `jobSubPanel-stats` | 차트 + 작업별 통계 테이블 |
 | 설정 | `panel-settings` | Slack, 대시보드 URL, 내보내기 |
-| 세션 | `panel-sessions` | Claude Code 세션 관리 |
+| 세션 | `panel-sessions` | Claude Code 세션 관리 (서브탭: 세션 목록/지식 그래프/리뷰 분석) |
 | 노트 | `panel-notes` | 날짜별 메모/백로그 조회 |
 
 ### 주요 모달
@@ -71,6 +71,10 @@ npm start             # 프로덕션 실행
 | 스마트 서제스션 | `loadSuggestions()` | index.html (규칙 기반, localStorage dismiss) |
 | 생산성 분석 | `loadProductivity()` | index.html (4개 차트, 기간 전환) |
 | 주간 다이제스트 | `generateWeeklyDigest()` | index.html (Claude CLI 비동기 태스크) |
+| 메모 분류 | `classifyMemoBackground()` | server.js (키워드+Claude 하이브리드, SSE) |
+| 세션 인사이트 | `loadSessionInsightsTab()` | index.html (세션 모달 인사이트 탭) |
+| 지식 그래프 | `loadKnowledgeGraphUI()` | index.html (vis-network, 세션 탭 서브탭) |
+| 리뷰 분석 | `generateReviewAnalysis()` | index.html (GitHub PR 리뷰 패턴 분석) |
 | SSE 이벤트 | `initSSE()` | index.html |
 
 ## 아키텍처
@@ -109,6 +113,10 @@ npm start             # 프로덕션 실행
 | `weekly-digests.json` | 주간 다이제스트 |
 | `session-summaries.json` | 세션 요약 캐시 |
 | `daily-reports.json` | 일일/종합/하루마무리 보고서 캐시 |
+| `memo-categories.json` | 메모 자동 분류 (카테고리/태그) |
+| `session-insights.json` | 세션 인사이트 캐시 (토픽/기술/문제) |
+| `knowledge-graph.json` | 지식 그래프 노드/엣지 |
+| `review-analysis.json` | 코드 리뷰 패턴 분석 결과 |
 
 ### 데이터 흐름
 ```
@@ -144,8 +152,18 @@ Slack (webhooks)
 | GET | `/api/insights/productivity?days=N` | 생산성 분석 (시간대/일별/프로젝트/비교) |
 | POST | `/api/insights/weekly-digest` | 주간 다이제스트 생성 (비동기 태스크) |
 | GET | `/api/insights/weekly-digest?week=YYYY-MM-DD` | 저장된 다이제스트 조회 |
-| POST | `/api/tasks` | 비동기 태스크 (ask, daily-report, weekly-digest 등) |
-| GET | `/api/tasks/events` | SSE 스트림 |
+| PATCH | `/api/quick-memos/:id/category` | 메모 카테고리/태그 수동 수정 |
+| POST | `/api/memos/migrate-classifications` | 기존 메모 일괄 키워드 분류 |
+| GET | `/api/memos/stats` | 카테고리별 메모 통계 |
+| GET | `/api/sessions/:id/insights?project=` | 세션 인사이트 조회/생성 (캐시 or 비동기) |
+| GET | `/api/sessions/insights/overview?days=N` | 인사이트 통계 요약 |
+| GET | `/api/knowledge-graph?minMentions=N` | 지식 그래프 노드/엣지 |
+| POST | `/api/knowledge-graph/rebuild` | 지식 그래프 재구성 |
+| GET | `/api/knowledge-graph/recommendations?topic=` | 토픽 추천 + 복습 제안 |
+| POST | `/api/github/review-analysis` | 리뷰 패턴 분석 (비동기) |
+| GET | `/api/github/review-analysis` | 저장된 리뷰 분석 조회 |
+| POST | `/api/tasks` | 비동기 태스크 (ask, daily-report, session-insights, review-analysis 등) |
+| GET | `/api/tasks/events` | SSE 스트림 (memo:classified 포함) |
 
 ## 환경변수
 
@@ -192,12 +210,16 @@ dashboard/
 | 4 | AI 심화 (메모 분류, 세션 인사이트, 지식 그래프) | `spec-phase4-ai-deep-integration.md` | P2-P3 |
 | 5 | 플랫폼 확장 (모바일, 위젯, 서버 모듈화) | `spec-phase5-platform-extension.md` | P3-P4 |
 
-**구현 완료**: Phase 1 전체 + Phase 2 전체
+**구현 완료**: Phase 1 전체 + Phase 2 전체 + Phase 4 전체
 - 1.1 통합 타임라인 (`GET /api/timeline` + 접기/펼치기 + 시간 범위 슬라이더 + 타입 필터)
 - 1.2 통합 검색 (`GET /api/search` + Cmd+K 모달 + 키보드 네비게이션)
 - 1.3 날짜 네비게이션 (홈 탭 날짜 선택기 + 전체 데이터 날짜 연동)
 - 2.1 주간 다이제스트 (`POST/GET /api/insights/weekly-digest` + Claude CLI 분석 + Obsidian WEEKLY/ 저장)
 - 2.2 생산성 분석 (`GET /api/insights/productivity` + 히트맵/도넛/트렌드/비교 차트)
 - 2.3 스마트 서제스션 (`GET /api/insights/suggestions` + 규칙 기반 5가지 제안 + localStorage 24시간 dismiss)
+- 4.1 메모 자동 분류 (키워드 Tier1 + Claude Tier2, `PATCH /api/quick-memos/:id/category`, 카테고리 필터, SSE 실시간 갱신)
+- 4.2 세션 인사이트 (`GET /api/sessions/:id/insights` + Claude CLI 분석 + 세션 모달 인사이트 탭)
+- 4.3 지식 그래프 (`GET /api/knowledge-graph` + vis-network 시각화 + 토픽 추천, 세션 탭 서브탭)
+- 4.4 코드 리뷰 분석 (`POST/GET /api/github/review-analysis` + Claude 패턴 분석 + 체크리스트)
 
-**다음 작업**: Phase 3 자동화 고도화 (`spec-phase3-advanced-automation.md` 참조)
+**다음 작업**: Phase 3 자동화 고도화 (`spec-phase3-advanced-automation.md` 참조) / Phase 5 플랫폼 확장

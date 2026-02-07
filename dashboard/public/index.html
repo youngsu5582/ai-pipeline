@@ -898,32 +898,28 @@
     <!-- Settings Tab -->
     <div id="panel-settings" class="hidden">
       <div class="max-w-2xl">
-        <!-- 알림 설정 -->
+        <!-- 알림 채널 관리 -->
         <div class="bg-gray-800 rounded-lg p-6 mb-6">
-          <h3 class="text-lg font-semibold mb-4">🔔 알림 설정</h3>
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium mb-1">Slack Webhook URL</label>
-              <input type="password" id="settingsSlackWebhook" placeholder="https://hooks.slack.com/services/..."
-                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
-              <p class="text-xs text-gray-500 mt-1">완료/실패 시 Slack 알림을 보낼 Webhook URL</p>
-            </div>
+          <h3 class="text-lg font-semibold mb-2">🔔 알림 채널</h3>
+          <p class="text-xs text-gray-500 mb-3">Slack, Discord, 브라우저 알림을 채널별로 관리합니다.</p>
+          <div class="flex items-center justify-between mb-4 p-3 bg-gray-700/30 rounded-lg">
             <div class="flex items-center gap-3">
-              <input type="checkbox" id="settingsSlackEnabled" class="w-4 h-4 rounded bg-gray-600 border-gray-500">
-              <label for="settingsSlackEnabled" class="text-sm">Slack 알림 기본 활성화</label>
+              <input type="checkbox" id="settingsBrowserNotifications" class="w-4 h-4 rounded bg-gray-600 border-gray-500"
+                onchange="onBrowserNotificationChange(this)">
+              <label for="settingsBrowserNotifications" class="text-sm">브라우저 푸시 알림</label>
             </div>
-            <div class="border-t border-gray-700 pt-4 mt-4">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <input type="checkbox" id="settingsBrowserNotifications" class="w-4 h-4 rounded bg-gray-600 border-gray-500"
-                    onchange="onBrowserNotificationChange(this)">
-                  <label for="settingsBrowserNotifications" class="text-sm">브라우저 알림</label>
-                </div>
-                <span id="notificationStatus" class="text-xs text-gray-500"></span>
-              </div>
-              <p class="text-xs text-gray-500 mt-2">작업 완료/실패 시 브라우저 푸시 알림</p>
-            </div>
+            <span id="notificationStatus" class="text-xs text-gray-500"></span>
           </div>
+          <div id="notificationChannelsList" class="space-y-3"></div>
+          <button onclick="addNotificationChannel()" class="mt-3 text-sm text-blue-400 hover:text-blue-300">+ 채널 추가</button>
+        </div>
+
+        <!-- 알림 규칙 -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+          <h3 class="text-lg font-semibold mb-2">📋 알림 규칙</h3>
+          <p class="text-xs text-gray-500 mb-4">이벤트별로 어떤 채널에 알림을 보낼지 설정합니다.</p>
+          <div id="notificationRulesList" class="space-y-3"></div>
+          <button onclick="addNotificationRule()" class="mt-3 text-sm text-blue-400 hover:text-blue-300">+ 규칙 추가</button>
         </div>
 
         <!-- 대시보드 설정 -->
@@ -941,6 +937,29 @@
               <input type="number" id="settingsRefreshInterval" min="1" max="60" value="5"
                 class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
               <p class="text-xs text-gray-500 mt-1">작업 목록 자동 새로고침 간격 (1~60초)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Obsidian 경로 설정 -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+          <h3 class="text-lg font-semibold mb-4">📓 Obsidian Vault</h3>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-1">Vault 경로</label>
+              <input type="text" id="settingsObsidianVaultPath" placeholder="/Users/.../obsidian"
+                oninput="updateObsidianPreview()"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-mono text-sm">
+              <p class="text-xs text-gray-500 mt-1">Obsidian vault 루트 경로. 세션/보고서 내보내기, 메모 동기화에 사용됩니다.</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">Daily Note 폴더</label>
+              <input type="text" id="settingsObsidianDailyFolder" placeholder="DAILY"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-mono text-sm">
+              <p class="text-xs text-gray-500 mt-1">일일 노트 폴더명 (vault 기준 상대 경로)</p>
+            </div>
+            <div class="p-3 bg-gray-700/30 rounded-lg">
+              <p class="text-xs text-gray-400">📂 세션 내보내기 저장 위치: <code class="text-gray-300" id="obsidianExportPreview">-</code></p>
             </div>
           </div>
         </div>
@@ -989,6 +1008,14 @@
           <p class="text-xs text-gray-500 mt-3">* 자동 복구는 첫 번째 실패 시에만 시도됩니다</p>
         </div>
 
+        <!-- 외부 트리거 (Webhooks) -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+          <h3 class="text-lg font-semibold mb-2">🔗 외부 트리거 (Webhooks)</h3>
+          <p class="text-xs text-gray-500 mb-4">외부 서비스(GitHub Actions, CI/CD 등)에서 작업을 트리거할 수 있는 토큰입니다.</p>
+          <div id="webhookTokensList" class="space-y-3"></div>
+          <button onclick="createWebhookToken()" class="mt-3 text-sm text-blue-400 hover:text-blue-300">+ 토큰 생성</button>
+        </div>
+
         <!-- 데이터 관리 -->
         <div class="bg-gray-800 rounded-lg p-6 mb-6">
           <h3 class="text-lg font-semibold mb-4">💾 데이터 관리</h3>
@@ -1018,38 +1045,103 @@
 
     <!-- Sessions Tab -->
     <div id="panel-sessions" class="hidden">
-      <!-- Sessions Filter -->
-      <div class="flex items-center gap-4 mb-6 bg-gray-800 rounded-lg p-4">
-        <div>
-          <label class="text-sm text-gray-400 mr-2">날짜:</label>
-          <input type="date" id="sessionsDate"
-            class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm"
-            onchange="loadSessions()">
+      <!-- 세션 서브탭 네비게이션 -->
+      <div class="flex gap-2 mb-4">
+        <button id="sessionsSub-list" onclick="showSessionsSubTab('list')"
+          class="sessions-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white">🤖 세션 목록</button>
+        <button id="sessionsSub-graph" onclick="showSessionsSubTab('graph')"
+          class="sessions-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">🔗 지식 그래프</button>
+        <button id="sessionsSub-review" onclick="showSessionsSubTab('review')"
+          class="sessions-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">📝 리뷰 분석</button>
+      </div>
+
+      <!-- 세션 목록 서브패널 -->
+      <div id="sessionsSubPanel-list">
+        <!-- Sessions Filter -->
+        <div class="flex items-center gap-4 mb-6 bg-gray-800 rounded-lg p-4">
+          <div>
+            <label class="text-sm text-gray-400 mr-2">날짜:</label>
+            <input type="date" id="sessionsDate"
+              class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm"
+              onchange="loadSessions()">
+          </div>
+          <div>
+            <label class="text-sm text-gray-400 mr-2">프로젝트:</label>
+            <select id="sessionsProject"
+              class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm"
+              onchange="loadSessions()">
+              <option value="">전체</option>
+            </select>
+          </div>
+          <div class="ml-auto flex gap-2">
+            <button onclick="generateDailyReport()" class="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-lg text-sm font-medium transition-all" title="Claude가 오늘 세션을 분석하여 보고서 생성">
+              ✨ 일일 보고서
+            </button>
+            <button onclick="exportAllSessionsToObsidian()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-medium transition-colors" title="선택된 날짜의 모든 세션을 옵시디언으로 내보내기">
+              📝 전체 내보내기
+            </button>
+            <button onclick="loadSessions()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">
+              🔄 새로고침
+            </button>
+          </div>
         </div>
-        <div>
-          <label class="text-sm text-gray-400 mr-2">프로젝트:</label>
-          <select id="sessionsProject"
-            class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm"
-            onchange="loadSessions()">
-            <option value="">전체</option>
-          </select>
-        </div>
-        <div class="ml-auto flex gap-2">
-          <button onclick="generateDailyReport()" class="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-lg text-sm font-medium transition-all" title="Claude가 오늘 세션을 분석하여 보고서 생성">
-            ✨ 일일 보고서
-          </button>
-          <button onclick="exportAllSessionsToObsidian()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-medium transition-colors" title="선택된 날짜의 모든 세션을 옵시디언으로 내보내기">
-            📝 전체 내보내기
-          </button>
-          <button onclick="loadSessions()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">
-            🔄 새로고침
-          </button>
+
+        <!-- Sessions List -->
+        <div id="sessionsList" class="grid gap-4">
+          <div class="text-center text-gray-500 py-8">세션을 로드하려면 날짜를 선택하세요</div>
         </div>
       </div>
 
-      <!-- Sessions List -->
-      <div id="sessionsList" class="grid gap-4">
-        <div class="text-center text-gray-500 py-8">세션을 로드하려면 날짜를 선택하세요</div>
+      <!-- 지식 그래프 서브패널 -->
+      <div id="sessionsSubPanel-graph" class="hidden">
+        <div class="bg-gray-800/50 rounded-xl p-5 border border-gray-700/50">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-lg font-bold">🔗 지식 그래프</h3>
+              <p class="text-xs text-gray-400 mt-1">세션 인사이트와 메모 태그로 구성된 지식 그래프. 노드 크기 = 언급 횟수.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="graphMinMentions" onchange="loadKnowledgeGraphUI()" class="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-xs">
+                <option value="1">모든 주제</option>
+                <option value="2" selected>2회 이상</option>
+                <option value="3">3회 이상</option>
+                <option value="5">5회 이상</option>
+              </select>
+              <button onclick="rebuildKnowledgeGraphUI()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium">
+                🔄 재구성
+              </button>
+            </div>
+          </div>
+          <div id="knowledgeGraphStats" class="flex gap-4 mb-3 text-xs text-gray-500"></div>
+          <div id="knowledgeGraphContainer" style="height: 550px; border: 1px solid #374151; border-radius: 8px; background: #111827;">
+            <div class="flex items-center justify-center h-full text-gray-500">그래프 로딩 중...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 리뷰 분석 서브패널 -->
+      <div id="sessionsSubPanel-review" class="hidden">
+        <div class="bg-gray-800/50 rounded-xl p-5 border border-gray-700/50">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-lg font-bold">📝 코드 리뷰 분석</h3>
+              <p class="text-xs text-gray-400 mt-1">GitHub PR 리뷰 활동을 AI가 분석하여 패턴과 체크리스트를 제공합니다.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="reviewDays" class="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-xs">
+                <option value="14">최근 14일</option>
+                <option value="30" selected>최근 30일</option>
+                <option value="60">최근 60일</option>
+              </select>
+              <button onclick="generateReviewAnalysis()" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-xs font-medium">
+                ✨ 분석 생성
+              </button>
+            </div>
+          </div>
+          <div id="reviewAnalysisContent">
+            <div class="text-center text-gray-500 py-12">리뷰 분석을 시작하려면 "분석 생성" 버튼을 클릭하세요.</div>
+          </div>
+        </div>
       </div>
 
       <!-- Session Detail Modal -->
@@ -1089,13 +1181,20 @@
       </div>
 
       <!-- Filter Tabs -->
-      <div class="flex gap-2 mb-4">
+      <div class="flex gap-2 mb-4 flex-wrap">
         <button onclick="setNotesFilter('all')" id="noteFilter-all"
           class="note-filter-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white">전체</button>
         <button onclick="setNotesFilter('backlog')" id="noteFilter-backlog"
           class="note-filter-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">📋 백로그 <span id="backlogOpenCount" class="text-xs"></span></button>
         <button onclick="setNotesFilter('memo')" id="noteFilter-memo"
           class="note-filter-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">📝 메모</button>
+        <span class="w-px bg-gray-700 self-stretch"></span>
+        <button onclick="setNotesFilter('learning')" id="noteFilter-learning"
+          class="note-filter-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">📚 학습</button>
+        <button onclick="setNotesFilter('work')" id="noteFilter-work"
+          class="note-filter-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">💼 업무</button>
+        <button onclick="setNotesFilter('idea')" id="noteFilter-idea"
+          class="note-filter-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">💡 아이디어</button>
         <button onclick="setNotesFilter('done')" id="noteFilter-done"
           class="note-filter-btn px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">✅ 완료</button>
       </div>
@@ -1152,20 +1251,85 @@
           </div>
 
           <div>
-            <label class="block text-sm font-medium mb-1">
-              Cron 스케줄 *
-              <a href="https://crontab.guru" target="_blank" class="text-blue-400 text-xs ml-2">crontab.guru ↗</a>
-            </label>
-            <div class="flex gap-3 items-start">
-              <input type="text" id="jobSchedule" required placeholder="0 9 * * *"
-                class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-mono"
-                oninput="updateCronDescription()">
-              <div id="cronBubble" class="relative bg-gradient-to-r from-blue-600/30 to-purple-600/30 border border-blue-500/50 text-blue-200 text-xs px-3 py-2 rounded-lg min-w-[140px] hidden">
-                <div class="absolute left-0 top-3 -translate-x-[7px]">
-                  <div class="w-0 h-0 border-y-[6px] border-y-transparent border-r-[7px] border-r-blue-500/50"></div>
+            <label class="block text-sm font-medium mb-2">스케줄 설정</label>
+
+            <!-- 모드 토글 -->
+            <div class="flex gap-4 mb-3">
+              <label class="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="radio" name="schedMode" value="simple" onchange="toggleScheduleMode('simple')" class="w-4 h-4"> 간편 설정
+              </label>
+              <label class="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="radio" name="schedMode" value="cron" checked onchange="toggleScheduleMode('cron')" class="w-4 h-4"> Cron 직접 입력
+              </label>
+              <a href="https://crontab.guru" target="_blank" class="text-blue-400 text-xs ml-auto self-center">crontab.guru ↗</a>
+            </div>
+
+            <!-- 간편 설정 모드 -->
+            <div id="simpleSchedulePanel" class="hidden space-y-3 mb-3">
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">반복 주기</label>
+                <select id="schedFrequency" onchange="onFrequencyChange()"
+                  class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                  <option value="hourly">매시간</option>
+                  <option value="daily">매일</option>
+                  <option value="weekdays" selected>평일만</option>
+                  <option value="weekly">매주 특정 요일</option>
+                  <option value="monthly">매월</option>
+                </select>
+              </div>
+
+              <!-- 요일 선택기 (weekly만) -->
+              <div id="schedWeekdayPicker" class="hidden">
+                <label class="block text-xs text-gray-400 mb-1">요일 선택</label>
+                <div class="flex gap-1">
+                  <button type="button" onclick="toggleWeekday(1)" data-day="1" class="weekday-btn px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 transition-colors">월</button>
+                  <button type="button" onclick="toggleWeekday(2)" data-day="2" class="weekday-btn px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 transition-colors">화</button>
+                  <button type="button" onclick="toggleWeekday(3)" data-day="3" class="weekday-btn px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 transition-colors">수</button>
+                  <button type="button" onclick="toggleWeekday(4)" data-day="4" class="weekday-btn px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 transition-colors">목</button>
+                  <button type="button" onclick="toggleWeekday(5)" data-day="5" class="weekday-btn px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 transition-colors">금</button>
+                  <button type="button" onclick="toggleWeekday(6)" data-day="6" class="weekday-btn px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 transition-colors">토</button>
+                  <button type="button" onclick="toggleWeekday(0)" data-day="0" class="weekday-btn px-3 py-1.5 rounded text-sm bg-gray-700 hover:bg-gray-600 transition-colors">일</button>
                 </div>
-                <div id="cronDescription" class="font-medium">-</div>
-                <div id="cronNextRun" class="text-gray-400 mt-1 text-[10px]"></div>
+              </div>
+
+              <!-- 매월 날짜 (monthly만) -->
+              <div id="schedMonthDayPicker" class="hidden">
+                <label class="block text-xs text-gray-400 mb-1">날짜</label>
+                <div class="flex items-center gap-1">
+                  <input type="number" id="schedMonthDay" min="1" max="28" value="1"
+                    class="w-20 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" onchange="generateCronFromSimple()">
+                  <span class="text-sm text-gray-400">일</span>
+                </div>
+              </div>
+
+              <!-- 시간 선택 (hourly 아닐 때) -->
+              <div id="schedTimePicker">
+                <label class="block text-xs text-gray-400 mb-1">실행 시간</label>
+                <input type="time" id="schedTime" value="09:00"
+                  class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" onchange="generateCronFromSimple()">
+              </div>
+
+              <!-- 분 오프셋 (hourly만) -->
+              <div id="schedMinutePicker" class="hidden">
+                <label class="block text-xs text-gray-400 mb-1">분 (매시 N분)</label>
+                <input type="number" id="schedMinute" min="0" max="59" value="0"
+                  class="w-20 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" onchange="generateCronFromSimple()">
+              </div>
+            </div>
+
+            <!-- Cron 직접 입력 모드 -->
+            <div id="cronSchedulePanel">
+              <div class="flex gap-3 items-start">
+                <input type="text" id="jobSchedule" required placeholder="0 9 * * *"
+                  class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-mono"
+                  oninput="updateCronDescription()">
+                <div id="cronBubble" class="relative bg-gradient-to-r from-blue-600/30 to-purple-600/30 border border-blue-500/50 text-blue-200 text-xs px-3 py-2 rounded-lg min-w-[140px] hidden">
+                  <div class="absolute left-0 top-3 -translate-x-[7px]">
+                    <div class="w-0 h-0 border-y-[6px] border-y-transparent border-r-[7px] border-r-blue-500/50"></div>
+                  </div>
+                  <div id="cronDescription" class="font-medium">-</div>
+                  <div id="cronNextRun" class="text-gray-400 mt-1 text-[10px]"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -1289,14 +1453,14 @@
 
   <!-- Edge Type Modal -->
   <div id="edgeModal" class="modal fixed inset-0 bg-black/50 items-center justify-center z-50">
-    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-sm mx-4">
+    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
       <h2 class="text-xl font-bold mb-4">연결 타입 선택</h2>
       <input type="hidden" id="edgeFrom">
       <input type="hidden" id="edgeTo">
 
-      <div class="space-y-3 mb-6">
+      <div class="space-y-2 mb-4">
         <label class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
-          <input type="radio" name="edgeType" value="visual" checked class="w-4 h-4">
+          <input type="radio" name="edgeType" value="visual" checked class="w-4 h-4" onchange="onEdgeTypeChange()">
           <div>
             <div class="font-medium">시각적 연결</div>
             <div class="text-sm text-gray-400">관계 표시만 (자동 실행 안함)</div>
@@ -1304,7 +1468,7 @@
         </label>
 
         <label class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
-          <input type="radio" name="edgeType" value="trigger-success" class="w-4 h-4">
+          <input type="radio" name="edgeType" value="trigger-success" class="w-4 h-4" onchange="onEdgeTypeChange()">
           <div>
             <div class="font-medium text-green-400">✓ 성공 시 실행</div>
             <div class="text-sm text-gray-400">앞 작업 성공하면 다음 실행</div>
@@ -1312,12 +1476,45 @@
         </label>
 
         <label class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
-          <input type="radio" name="edgeType" value="trigger-always" class="w-4 h-4">
+          <input type="radio" name="edgeType" value="trigger-failure" class="w-4 h-4" onchange="onEdgeTypeChange()">
+          <div>
+            <div class="font-medium text-red-400">✗ 실패 시 실행</div>
+            <div class="text-sm text-gray-400">앞 작업 실패하면 다음 실행</div>
+          </div>
+        </label>
+
+        <label class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
+          <input type="radio" name="edgeType" value="trigger-always" class="w-4 h-4" onchange="onEdgeTypeChange()">
           <div>
             <div class="font-medium text-yellow-400">⚡ 항상 실행</div>
             <div class="text-sm text-gray-400">성공/실패 관계없이 다음 실행</div>
           </div>
         </label>
+
+        <label class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600">
+          <input type="radio" name="edgeType" value="trigger-output" class="w-4 h-4" onchange="onEdgeTypeChange()">
+          <div>
+            <div class="font-medium text-blue-400">📋 출력값 매칭</div>
+            <div class="text-sm text-gray-400">출력에 특정 패턴 포함 시 실행</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- 출력값 매칭 추가 옵션 -->
+      <div id="edgeConditionExtra" class="hidden mb-4 p-3 bg-gray-900 rounded-lg space-y-2">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">패턴</label>
+          <input id="edgeConditionPattern" type="text" placeholder="ERROR, CRITICAL 등"
+            class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+        </div>
+        <div class="flex gap-3">
+          <label class="flex items-center gap-1 text-sm text-gray-400 cursor-pointer">
+            <input type="radio" name="edgeMatchType" value="contains" checked class="w-3 h-3"> 포함
+          </label>
+          <label class="flex items-center gap-1 text-sm text-gray-400 cursor-pointer">
+            <input type="radio" name="edgeMatchType" value="regex" class="w-3 h-3"> 정규식
+          </label>
+        </div>
       </div>
 
       <div class="flex gap-3">
@@ -1451,6 +1648,38 @@
       </div>
       <div id="globalSearchResults" class="max-h-[50vh] overflow-y-auto p-2">
         <div class="text-center text-gray-600 text-sm py-8">Cmd+K로 검색을 시작하세요</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Webhook Token Copy Modal -->
+  <div id="tokenCopyModal" class="modal fixed inset-0 bg-black/50 items-center justify-center z-50">
+    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-lg mx-4">
+      <h2 class="text-xl font-bold mb-2">토큰 생성 완료</h2>
+      <p class="text-sm text-yellow-400 mb-4">이 토큰은 다시 볼 수 없습니다. 지금 복사하세요.</p>
+      <div class="bg-gray-900 rounded-lg p-3 mb-4">
+        <code id="tokenCopyValue" class="text-sm text-green-400 break-all select-all"></code>
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs text-gray-400 mb-1">사용 예시 (curl)</label>
+        <pre id="tokenCopyCurl" class="bg-gray-900 rounded-lg p-3 text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap"></pre>
+      </div>
+      <div class="flex gap-3">
+        <button onclick="copyTokenToClipboard()" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2 rounded-lg font-medium text-sm">토큰 복사</button>
+        <button onclick="document.getElementById('tokenCopyModal').classList.remove('active')" class="flex-1 bg-gray-600 hover:bg-gray-500 py-2 rounded-lg font-medium text-sm">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Simple Input Modal (for token name etc.) -->
+  <div id="simpleInputModal" class="modal fixed inset-0 bg-black/50 items-center justify-center z-50">
+    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-sm mx-4">
+      <h2 id="simpleInputTitle" class="text-lg font-bold mb-3"></h2>
+      <input id="simpleInputValue" type="text" class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 mb-4"
+        onkeydown="if(event.key==='Enter')resolveSimpleInput()">
+      <div class="flex gap-3">
+        <button onclick="resolveSimpleInput()" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2 rounded-lg font-medium text-sm">확인</button>
+        <button onclick="rejectSimpleInput()" class="flex-1 bg-gray-600 hover:bg-gray-500 py-2 rounded-lg font-medium text-sm">취소</button>
       </div>
     </div>
   </div>
@@ -1760,6 +1989,18 @@
       eventSource.addEventListener('task:deleted', (e) => {
         const data = JSON.parse(e.data);
         removeTaskFromPanel(data.taskId);
+      });
+
+      // Phase 4: 메모 분류 완료 이벤트
+      eventSource.addEventListener('memo:classified', (e) => {
+        const data = JSON.parse(e.data);
+        // 노트 탭이 보이면 메모 데이터 업데이트
+        const memo = notesData?.memos?.find(m => m.id === data.memoId);
+        if (memo) {
+          memo.category = data.category;
+          memo.tags = data.tags;
+          renderNotesList();
+        }
       });
 
       eventSource.onerror = () => {
@@ -2551,7 +2792,8 @@
         chained: '⛓️ 체인',
         'auto-fix': '🔧 자동복구',
         'scheduled-once': '⏰ 예약',
-        retry: '🔄 재시도'
+        retry: '🔄 재시도',
+        webhook: '🔗 웹훅'
       };
 
       const statusColors = {
@@ -3019,7 +3261,19 @@
       document.getElementById('jobRetryDelay').value = Math.floor((exec.retryDelay || 5000) / 1000);  // ms to sec
       document.getElementById('jobRetryBackoff').value = exec.backoff || 'fixed';
 
-      // Cron 설명 업데이트
+      // 스케줄 모드 감지 및 설정
+      selectedWeekdays = new Set();
+      document.querySelectorAll('.weekday-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-gray-700');
+      });
+      const detected = detectSimpleSchedule(job.schedule);
+      if (detected) {
+        applySimpleSchedule(detected);
+      } else {
+        document.querySelector('input[name="schedMode"][value="cron"]').checked = true;
+        toggleScheduleMode('cron');
+      }
       updateCronDescription();
 
       // 기본 탭으로 시작
@@ -3198,6 +3452,15 @@
       document.getElementById('jobRetryDelay').value = 5;
       document.getElementById('jobRetryBackoff').value = 'fixed';
 
+      // 스케줄 모드 초기화 (Cron 직접 입력)
+      selectedWeekdays = new Set();
+      document.querySelectorAll('.weekday-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-gray-700');
+      });
+      document.querySelector('input[name="schedMode"][value="cron"]').checked = true;
+      toggleScheduleMode('cron');
+
       // 기본 탭으로 시작
       showEditTab('basic');
 
@@ -3362,6 +3625,38 @@
       }
     }
 
+    // 엣지 스타일 결정 (조건별)
+    function getEdgeStyle(edge) {
+      const condType = edge.condition?.type;
+      // condition이 없고 trigger도 아닌 경우: 시각적 연결
+      if (!condType && !edge.trigger) {
+        return { color: '#6b7280', highlight: '#9ca3af', dashes: true, width: 1, label: edge.label || '', fontColor: '#9ca3af' };
+      }
+      switch (condType) {
+        case 'onSuccess':
+          return { color: '#10b981', highlight: '#34d399', dashes: false, width: 2, label: '✓', fontColor: '#10b981' };
+        case 'onFailure':
+          return { color: '#ef4444', highlight: '#f87171', dashes: [5, 5], width: 2, label: '✗', fontColor: '#ef4444' };
+        case 'always':
+          return { color: '#9ca3af', highlight: '#d1d5db', dashes: false, width: 2, label: '⚡', fontColor: '#9ca3af' };
+        case 'onOutput': {
+          const pat = edge.condition.pattern || '';
+          return { color: '#3b82f6', highlight: '#60a5fa', dashes: [3, 3], width: 2, label: `📋 ${pat.substring(0, 10)}`, fontColor: '#3b82f6' };
+        }
+        case 'onExitCode':
+          return { color: '#f59e0b', highlight: '#fbbf24', dashes: [3, 3], width: 2, label: `exit:${edge.condition.code}`, fontColor: '#f59e0b' };
+        default:
+          // 하위 호환: legacy trigger/onSuccess
+          if (edge.trigger) {
+            const isSuccess = edge.onSuccess !== false;
+            return isSuccess
+              ? { color: '#10b981', highlight: '#34d399', dashes: false, width: 2, label: '✓', fontColor: '#10b981' }
+              : { color: '#9ca3af', highlight: '#d1d5db', dashes: false, width: 2, label: '⚡', fontColor: '#9ca3af' };
+          }
+          return { color: '#6b7280', highlight: '#9ca3af', dashes: true, width: 1, label: '', fontColor: '#9ca3af' };
+      }
+    }
+
     // 노드 색상 결정 (상태별)
     // 노드 색상 결정 (상태 + 카테고리)
     function getNodeColor(job) {
@@ -3425,22 +3720,17 @@
       // Edge 데이터 (필터된 노드에 연결된 것만)
       const filteredNodeIds = new Set(filtered.map(j => j.id));
       const edgeData = edges.filter(e => filteredNodeIds.has(e.from) && filteredNodeIds.has(e.to)).map(e => {
-        // trigger edge는 녹색 실선, 일반은 회색 점선
-        const isTrigger = e.trigger === true;
-        const label = isTrigger ? (e.onSuccess ? '✓' : '⚡') : (e.label || '');
-
+        const style = getEdgeStyle(e);
         return {
           id: e.id,
           from: e.from,
           to: e.to,
-          label: label,
+          label: style.label,
           arrows: 'to',
-          color: isTrigger
-            ? { color: '#10b981', highlight: '#34d399' }
-            : { color: '#6b7280', highlight: '#9ca3af' },
-          dashes: !isTrigger,
-          width: isTrigger ? 2 : 1,
-          font: { color: isTrigger ? '#10b981' : '#9ca3af', size: 12 },
+          color: { color: style.color, highlight: style.highlight || style.color },
+          dashes: style.dashes,
+          width: style.width,
+          font: { color: style.fontColor, size: 12 },
           smooth: { type: 'curvedCW', roundness: 0.2 }
         };
       });
@@ -3690,6 +3980,11 @@
       document.getElementById('edgeModal').classList.remove('active');
     }
 
+    function onEdgeTypeChange() {
+      const type = document.querySelector('input[name="edgeType"]:checked').value;
+      document.getElementById('edgeConditionExtra').classList.toggle('hidden', type !== 'trigger-output');
+    }
+
     async function confirmEdgeCreate() {
       const from = document.getElementById('edgeFrom').value;
       const to = document.getElementById('edgeTo').value;
@@ -3697,13 +3992,28 @@
 
       let trigger = false;
       let onSuccess = true;
+      let condition = null;
 
-      if (type === 'trigger-success') {
-        trigger = true;
-        onSuccess = true;
-      } else if (type === 'trigger-always') {
-        trigger = true;
-        onSuccess = false;
+      switch (type) {
+        case 'trigger-success':
+          trigger = true; onSuccess = true;
+          condition = { type: 'onSuccess' };
+          break;
+        case 'trigger-failure':
+          trigger = true; onSuccess = false;
+          condition = { type: 'onFailure' };
+          break;
+        case 'trigger-always':
+          trigger = true; onSuccess = false;
+          condition = { type: 'always' };
+          break;
+        case 'trigger-output':
+          trigger = true; onSuccess = false;
+          const pattern = document.getElementById('edgeConditionPattern').value.trim();
+          const matchType = document.querySelector('input[name="edgeMatchType"]:checked').value;
+          if (!pattern) { showToast('패턴을 입력하세요', 'error'); return; }
+          condition = { type: 'onOutput', pattern, matchType };
+          break;
       }
 
       closeEdgeModal();
@@ -3712,10 +4022,10 @@
         const res = await fetch(`${API_BASE}/api/edges`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from, to, trigger, onSuccess })
+          body: JSON.stringify({ from, to, trigger, onSuccess, condition })
         });
         if (res.ok) {
-          loadJobs();  // 새로고침하여 edge 반영
+          loadJobs();
         }
       } catch (error) {
         console.error('Failed to create edge:', error);
@@ -4185,6 +4495,125 @@
       }
     }
 
+    // === 스마트 스케줄링 ===
+    let selectedWeekdays = new Set();
+
+    function toggleScheduleMode(mode) {
+      document.getElementById('simpleSchedulePanel').classList.toggle('hidden', mode !== 'simple');
+      document.getElementById('cronSchedulePanel').classList.toggle('hidden', mode !== 'cron');
+      if (mode === 'simple') generateCronFromSimple();
+    }
+
+    function onFrequencyChange() {
+      const freq = document.getElementById('schedFrequency').value;
+      document.getElementById('schedWeekdayPicker').classList.toggle('hidden', freq !== 'weekly');
+      document.getElementById('schedMonthDayPicker').classList.toggle('hidden', freq !== 'monthly');
+      document.getElementById('schedTimePicker').classList.toggle('hidden', freq === 'hourly');
+      document.getElementById('schedMinutePicker').classList.toggle('hidden', freq !== 'hourly');
+      generateCronFromSimple();
+    }
+
+    function toggleWeekday(day) {
+      const btn = document.querySelector(`.weekday-btn[data-day="${day}"]`);
+      if (selectedWeekdays.has(day)) {
+        selectedWeekdays.delete(day);
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-gray-700');
+      } else {
+        selectedWeekdays.add(day);
+        btn.classList.add('bg-blue-600', 'text-white');
+        btn.classList.remove('bg-gray-700');
+      }
+      generateCronFromSimple();
+    }
+
+    function generateCronFromSimple() {
+      const freq = document.getElementById('schedFrequency').value;
+      const time = document.getElementById('schedTime').value || '09:00';
+      const [hour, minute] = time.split(':').map(Number);
+      const minuteOffset = parseInt(document.getElementById('schedMinute').value) || 0;
+      const monthDay = parseInt(document.getElementById('schedMonthDay').value) || 1;
+
+      let cron = '';
+      switch (freq) {
+        case 'hourly':
+          cron = `${minuteOffset} * * * *`;
+          break;
+        case 'daily':
+          cron = `${minute} ${hour} * * *`;
+          break;
+        case 'weekdays':
+          cron = `${minute} ${hour} * * 1-5`;
+          break;
+        case 'weekly': {
+          const days = selectedWeekdays.size > 0 ? [...selectedWeekdays].sort().join(',') : '1';
+          cron = `${minute} ${hour} * * ${days}`;
+          break;
+        }
+        case 'monthly':
+          cron = `${minute} ${hour} ${monthDay} * *`;
+          break;
+      }
+
+      document.getElementById('jobSchedule').value = cron;
+      updateCronDescription();
+    }
+
+    function detectSimpleSchedule(cronStr) {
+      if (!cronStr) return null;
+      const parts = cronStr.trim().split(/\s+/);
+      if (parts.length !== 5) return null;
+      const [min, hour, dom, month, dow] = parts;
+      if (month !== '*') return null;
+
+      if (hour === '*' && dom === '*' && dow === '*') {
+        return { freq: 'hourly', minute: parseInt(min) || 0 };
+      }
+      if (/^\d+$/.test(min) && /^\d+$/.test(hour) && dom === '*' && dow === '*') {
+        return { freq: 'daily', hour: parseInt(hour), minute: parseInt(min) };
+      }
+      if (/^\d+$/.test(min) && /^\d+$/.test(hour) && dom === '*' && dow === '1-5') {
+        return { freq: 'weekdays', hour: parseInt(hour), minute: parseInt(min) };
+      }
+      if (/^\d+$/.test(min) && /^\d+$/.test(hour) && dom === '*' && /^[\d,]+$/.test(dow)) {
+        return { freq: 'weekly', hour: parseInt(hour), minute: parseInt(min), days: dow.split(',').map(Number) };
+      }
+      if (/^\d+$/.test(min) && /^\d+$/.test(hour) && /^\d+$/.test(dom) && dow === '*') {
+        return { freq: 'monthly', hour: parseInt(hour), minute: parseInt(min), day: parseInt(dom) };
+      }
+      return null;
+    }
+
+    function applySimpleSchedule(detected) {
+      document.querySelector('input[name="schedMode"][value="simple"]').checked = true;
+      toggleScheduleMode('simple');
+      document.getElementById('schedFrequency').value = detected.freq;
+      onFrequencyChange();
+
+      if (detected.freq === 'hourly') {
+        document.getElementById('schedMinute').value = detected.minute || 0;
+      } else {
+        const h = String(detected.hour || 9).padStart(2, '0');
+        const m = String(detected.minute || 0).padStart(2, '0');
+        document.getElementById('schedTime').value = `${h}:${m}`;
+      }
+
+      if (detected.freq === 'weekly' && detected.days) {
+        selectedWeekdays = new Set(detected.days);
+        document.querySelectorAll('.weekday-btn').forEach(btn => {
+          const d = parseInt(btn.dataset.day);
+          if (selectedWeekdays.has(d)) {
+            btn.classList.add('bg-blue-600', 'text-white');
+            btn.classList.remove('bg-gray-700');
+          }
+        });
+      }
+
+      if (detected.freq === 'monthly' && detected.day) {
+        document.getElementById('schedMonthDay').value = detected.day;
+      }
+    }
+
     // Auto refresh (5초마다 jobs 상태 갱신)
     setInterval(() => {
       loadJobs();
@@ -4548,17 +4977,42 @@
         // localStorage에서 브라우저 알림 설정 읽기 (로컬 설정)
         currentSettings.browserNotifications = localStorage.getItem('browserNotifications') === 'true';
 
+        // 기존 slackWebhookUrl → 채널 자동 마이그레이션
+        if (currentSettings.slackWebhookUrl && (!currentSettings.notifications?.channels?.length)) {
+          const migrated = {
+            channels: [{
+              id: 'slack-main', type: 'slack', name: '기본 Slack',
+              webhookUrl: currentSettings.slackWebhookUrl, enabled: currentSettings.slackEnabled !== false
+            }],
+            rules: [
+              { id: 'rule-migrated-1', event: 'job.failed', channels: ['slack-main'], filter: {} },
+              { id: 'rule-migrated-2', event: 'job.success', channels: ['slack-main'], filter: {} }
+            ]
+          };
+          currentSettings.notifications = migrated;
+        }
+
         // 폼에 값 채우기
-        document.getElementById('settingsSlackWebhook').value = currentSettings.slackWebhookUrl || '';
-        document.getElementById('settingsSlackEnabled').checked = currentSettings.slackEnabled || false;
         document.getElementById('settingsDashboardUrl').value = currentSettings.dashboardUrl || 'http://localhost:3030';
         document.getElementById('settingsRefreshInterval').value = currentSettings.refreshInterval || 5;
         document.getElementById('settingsDefaultTimeout').value = currentSettings.defaultTimeout || 10;
         document.getElementById('settingsDefaultRetry').value = currentSettings.defaultRetry || 0;
         document.getElementById('settingsBrowserNotifications').checked = currentSettings.browserNotifications;
 
+        // Obsidian 경로
+        document.getElementById('settingsObsidianVaultPath').value = currentSettings.obsidianVaultPath || '';
+        document.getElementById('settingsObsidianDailyFolder').value = currentSettings.obsidianDailyFolder || 'DAILY';
+        updateObsidianPreview();
+
         // 알림 권한 상태 표시
         updateNotificationStatus();
+
+        // 알림 채널 & 규칙 렌더링
+        renderNotificationChannels(currentSettings.notifications?.channels || []);
+        renderNotificationRules(currentSettings.notifications?.rules || [], currentSettings.notifications?.channels || []);
+
+        // 웹훅 토큰 로드
+        loadWebhookTokens();
       } catch (err) {
         console.error('Settings load error:', err);
       }
@@ -4593,13 +5047,18 @@
     }
 
     async function saveSettings() {
+      // Slack URL은 채널에서 관리 - 채널에서 첫 번째 slack 타입의 URL을 legacy 필드에도 동기화
+      const slackChannel = notifChannels.find(c => c.type === 'slack' && c.enabled);
       const settings = {
-        slackWebhookUrl: document.getElementById('settingsSlackWebhook').value.trim(),
-        slackEnabled: document.getElementById('settingsSlackEnabled').checked,
+        slackWebhookUrl: slackChannel?.webhookUrl || '',
+        slackEnabled: !!slackChannel,
         dashboardUrl: document.getElementById('settingsDashboardUrl').value.trim() || 'http://localhost:3030',
         refreshInterval: parseInt(document.getElementById('settingsRefreshInterval').value) || 5,
         defaultTimeout: parseInt(document.getElementById('settingsDefaultTimeout').value) || 10,
-        defaultRetry: parseInt(document.getElementById('settingsDefaultRetry').value) || 0
+        defaultRetry: parseInt(document.getElementById('settingsDefaultRetry').value) || 0,
+        notifications: collectNotificationSettings(),
+        obsidianVaultPath: document.getElementById('settingsObsidianVaultPath').value.trim() || undefined,
+        obsidianDailyFolder: document.getElementById('settingsObsidianDailyFolder').value.trim() || undefined
       };
 
       // 브라우저 알림 설정은 localStorage에 저장 (브라우저별 설정)
@@ -4624,6 +5083,279 @@
         console.error('Settings save error:', err);
         showToast('설정 저장 중 오류가 발생했습니다.', 'error');
       }
+    }
+
+    // === 알림 채널 & 규칙 관리 ===
+    let notifChannels = [];
+    let notifRules = [];
+
+    function renderNotificationChannels(channels) {
+      notifChannels = channels;
+      const container = document.getElementById('notificationChannelsList');
+      if (!channels.length) {
+        container.innerHTML = '<p class="text-sm text-gray-500">등록된 채널이 없습니다.</p>';
+        return;
+      }
+      const typeIcons = { slack: '💬', discord: '🎮', native: '🔔' };
+      container.innerHTML = channels.map((ch, i) => `
+        <div class="p-3 bg-gray-700/50 rounded-lg space-y-2">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">${typeIcons[ch.type] || '📡'}</span>
+            <select onchange="updateChannelField(${i}, 'type', this.value)"
+              class="bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm">
+              <option value="slack" ${ch.type === 'slack' ? 'selected' : ''}>Slack</option>
+              <option value="discord" ${ch.type === 'discord' ? 'selected' : ''}>Discord</option>
+              <option value="native" ${ch.type === 'native' ? 'selected' : ''}>브라우저</option>
+            </select>
+            <input value="${ch.name || ''}" placeholder="채널 이름" onchange="updateChannelField(${i}, 'name', this.value)"
+              class="flex-1 bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm min-w-0">
+            <label class="flex items-center gap-1 shrink-0 cursor-pointer">
+              <input type="checkbox" ${ch.enabled ? 'checked' : ''} onchange="updateChannelField(${i}, 'enabled', this.checked)" class="w-4 h-4 rounded">
+            </label>
+            <button onclick="testNotificationChannel(${i})" class="px-2 py-1 text-xs bg-green-600/30 text-green-400 hover:bg-green-600/50 rounded shrink-0">테스트</button>
+            <button onclick="removeNotificationChannel(${i})" class="px-2 py-1 text-xs text-red-400 hover:bg-red-600/20 rounded shrink-0">삭제</button>
+          </div>
+          ${ch.type !== 'native' ? `
+          <input value="${ch.webhookUrl || ''}" placeholder="Webhook URL (https://hooks.slack.com/... 또는 https://discord.com/api/webhooks/...)"
+            onchange="updateChannelField(${i}, 'webhookUrl', this.value)"
+            class="w-full bg-gray-600 border border-gray-500 rounded px-2 py-1.5 text-xs font-mono min-w-0" type="password">
+          ` : ''}
+        </div>
+      `).join('');
+    }
+
+    function addNotificationChannel() {
+      notifChannels.push({ id: `ch-${Date.now()}`, type: 'slack', name: '', webhookUrl: '', enabled: true });
+      renderNotificationChannels(notifChannels);
+    }
+
+    function removeNotificationChannel(idx) {
+      notifChannels.splice(idx, 1);
+      renderNotificationChannels(notifChannels);
+      renderNotificationRules(notifRules, notifChannels);
+    }
+
+    function updateChannelField(idx, field, value) {
+      notifChannels[idx][field] = value;
+      if (field === 'type') renderNotificationChannels(notifChannels);
+    }
+
+    async function testNotificationChannel(idx) {
+      const ch = notifChannels[idx];
+      if (!ch.webhookUrl && ch.type !== 'native') {
+        showToast('Webhook URL을 입력하세요', 'error');
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE}/api/notifications/test`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: ch })
+        });
+        const text = await res.text();
+        if (res.ok) {
+          showToast('테스트 알림 전송 완료', 'success');
+        } else {
+          try { const d = JSON.parse(text); showToast(d.error || '전송 실패', 'error'); }
+          catch { showToast(`전송 실패 (${res.status})`, 'error'); }
+        }
+      } catch (err) {
+        showToast('테스트 실패: ' + err.message, 'error');
+      }
+    }
+
+    const notifEventTypes = [
+      { value: 'job.failed', label: '실패', icon: '❌', color: 'red' },
+      { value: 'job.success', label: '성공', icon: '✅', color: 'green' },
+      { value: 'job.started', label: '시작', icon: '▶️', color: 'blue' }
+    ];
+
+    function renderNotificationRules(rules, channels) {
+      notifRules = rules;
+      const container = document.getElementById('notificationRulesList');
+      if (!rules.length) {
+        container.innerHTML = '<p class="text-sm text-gray-500">등록된 규칙이 없습니다.</p>';
+        return;
+      }
+      const typeIcons = { slack: '💬', discord: '🎮', native: '🔔' };
+      const jobList = (allJobsData || []);
+
+      container.innerHTML = rules.map((rule, i) => {
+        const evt = notifEventTypes.find(e => e.value === rule.event) || notifEventTypes[0];
+        const filterJobId = rule.filter?.jobId || '';
+
+        return `
+        <div class="p-3 bg-gray-700/50 rounded-lg space-y-2">
+          <div class="flex items-center gap-2">
+            <!-- 이벤트 선택 -->
+            <select onchange="notifRules[${i}].event = this.value; renderNotificationRules(notifRules, notifChannels)"
+              class="bg-gray-600 border border-gray-500 rounded px-2 py-1 text-sm font-medium">
+              ${notifEventTypes.map(e => `<option value="${e.value}" ${rule.event === e.value ? 'selected' : ''}>${e.icon} ${e.label}</option>`).join('')}
+            </select>
+
+            <span class="text-gray-500">일 때</span>
+            <span class="text-gray-500 mx-1">→</span>
+
+            <!-- 채널 체크박스 칩 -->
+            <div class="flex gap-1.5 flex-wrap flex-1">
+              ${channels.map(c => {
+                const checked = (rule.channels || []).includes(c.id);
+                return `<label class="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs cursor-pointer transition-colors ${checked ? 'bg-blue-600/40 text-blue-300 border border-blue-500/50' : 'bg-gray-600/50 text-gray-400 border border-gray-600'}"
+                  ><input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleRuleChannel(${i}, '${c.id}')" class="hidden"
+                  >${typeIcons[c.type] || ''} ${c.name || c.type}</label>`;
+              }).join('')}
+            </div>
+
+            <button onclick="removeNotificationRule(${i})" class="px-2 py-1 text-xs text-red-400 hover:bg-red-600/20 rounded shrink-0">삭제</button>
+          </div>
+
+          <!-- 작업 필터 -->
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-gray-500">대상:</span>
+            <select onchange="setRuleJobFilter(${i}, this.value)"
+              class="bg-gray-600/50 border border-gray-600 rounded px-2 py-1 text-xs text-gray-300">
+              <option value="" ${!filterJobId ? 'selected' : ''}>모든 작업</option>
+              ${jobList.map(j => `<option value="${j.id}" ${filterJobId === j.id ? 'selected' : ''}>${j.name}</option>`).join('')}
+            </select>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function toggleRuleChannel(ruleIdx, channelId) {
+      const rule = notifRules[ruleIdx];
+      if (!rule.channels) rule.channels = [];
+      const idx = rule.channels.indexOf(channelId);
+      if (idx >= 0) rule.channels.splice(idx, 1);
+      else rule.channels.push(channelId);
+      renderNotificationRules(notifRules, notifChannels);
+    }
+
+    function setRuleJobFilter(ruleIdx, jobId) {
+      if (!notifRules[ruleIdx].filter) notifRules[ruleIdx].filter = {};
+      if (jobId) notifRules[ruleIdx].filter.jobId = jobId;
+      else delete notifRules[ruleIdx].filter.jobId;
+    }
+
+    function addNotificationRule() {
+      notifRules.push({ id: `rule-${Date.now()}`, event: 'job.failed', channels: [], filter: {} });
+      renderNotificationRules(notifRules, notifChannels);
+    }
+
+    function removeNotificationRule(idx) {
+      notifRules.splice(idx, 1);
+      renderNotificationRules(notifRules, notifChannels);
+    }
+
+    function collectNotificationSettings() {
+      return { channels: notifChannels, rules: notifRules };
+    }
+
+    // === Simple Input Modal ===
+    let simpleInputResolve = null;
+
+    function showInputModal(title, placeholder) {
+      return new Promise((resolve) => {
+        simpleInputResolve = resolve;
+        document.getElementById('simpleInputTitle').textContent = title;
+        const input = document.getElementById('simpleInputValue');
+        input.value = '';
+        input.placeholder = placeholder || '';
+        document.getElementById('simpleInputModal').classList.add('active');
+        setTimeout(() => input.focus(), 100);
+      });
+    }
+
+    function resolveSimpleInput() {
+      const val = document.getElementById('simpleInputValue').value.trim();
+      document.getElementById('simpleInputModal').classList.remove('active');
+      if (simpleInputResolve) { simpleInputResolve(val || null); simpleInputResolve = null; }
+    }
+
+    function rejectSimpleInput() {
+      document.getElementById('simpleInputModal').classList.remove('active');
+      if (simpleInputResolve) { simpleInputResolve(null); simpleInputResolve = null; }
+    }
+
+    // === Webhook Token 관리 ===
+    async function loadWebhookTokens() {
+      try {
+        const res = await fetch(`${API_BASE}/api/webhook-tokens`);
+        const tokens = await res.json();
+        renderWebhookTokens(tokens);
+      } catch (err) {
+        console.error('Webhook tokens load error:', err);
+      }
+    }
+
+    function renderWebhookTokens(tokens) {
+      const container = document.getElementById('webhookTokensList');
+      if (!tokens.length) {
+        container.innerHTML = '<p class="text-sm text-gray-500">생성된 토큰이 없습니다.</p>';
+        return;
+      }
+      container.innerHTML = tokens.map(t => `
+        <div class="p-3 bg-gray-700/50 rounded-lg">
+          <div class="flex items-center justify-between mb-1">
+            <span class="font-medium text-sm">${t.name}</span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-500">${t.usageCount || 0}회 사용</span>
+              <button onclick="toggleWebhookToken('${t.id}', ${!t.enabled})" class="text-xs ${t.enabled ? 'text-green-400' : 'text-gray-500'}">${t.enabled ? '활성' : '비활성'}</button>
+              <button onclick="deleteWebhookToken('${t.id}')" class="text-xs text-red-400 hover:text-red-300">삭제</button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-gray-400">
+            <code>${t.token}</code>
+            ${t.lastUsedAt ? `<span>| 마지막: ${new Date(t.lastUsedAt).toLocaleString('ko')}</span>` : ''}
+          </div>
+          ${t.allowedJobs?.length ? `<div class="text-xs text-gray-500 mt-1">허용: ${t.allowedJobs.join(', ')}</div>` : '<div class="text-xs text-gray-500 mt-1">모든 작업 허용</div>'}
+        </div>
+      `).join('');
+    }
+
+    async function createWebhookToken() {
+      const name = await showInputModal('토큰 이름', 'GitHub Actions 배포');
+      if (!name) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/webhook-tokens`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        const token = await res.json();
+        showTokenCopyModal(token.token);
+        loadWebhookTokens();
+      } catch (err) {
+        showToast('토큰 생성 실패', 'error');
+      }
+    }
+
+    function showTokenCopyModal(token) {
+      const dashUrl = currentSettings.dashboardUrl || 'http://localhost:3030';
+      document.getElementById('tokenCopyValue').textContent = token;
+      document.getElementById('tokenCopyCurl').textContent =
+        `curl -X POST ${dashUrl}/api/webhook/${token} \\\n  -H "Content-Type: application/json" \\\n  -d '{"jobId": "YOUR_JOB_ID"}'`;
+      document.getElementById('tokenCopyModal').classList.add('active');
+    }
+
+    function copyTokenToClipboard() {
+      const token = document.getElementById('tokenCopyValue').textContent;
+      navigator.clipboard.writeText(token).then(() => showToast('토큰이 복사되었습니다', 'success'));
+    }
+
+    async function toggleWebhookToken(id, enabled) {
+      await fetch(`${API_BASE}/api/webhook-tokens/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      loadWebhookTokens();
+    }
+
+    async function deleteWebhookToken(id) {
+      await fetch(`${API_BASE}/api/webhook-tokens/${id}`, { method: 'DELETE' });
+      loadWebhookTokens();
     }
 
     // Export/Import
@@ -4938,6 +5670,8 @@
 
     // 현재 세션 데이터 저장 (내보내기용)
     let currentSessionData = null;
+    let currentSessionForInsights = null;
+    let insightsLoadedFor = null;
 
     // 세션 별명 편집 (data-* 속성에서 읽기)
     function editSessionAliasFromData(btn) {
@@ -5066,6 +5800,7 @@
         const res = await fetch(`${API_BASE}/api/sessions/${sessionId}?project=${encodeURIComponent(projectPath)}`);
         const data = await res.json();
         currentSessionData = { ...data, sessionId, projectPath };
+        currentSessionForInsights = { id: sessionId, projectPath };
 
         const modal = document.getElementById('sessionDetailModal');
         const content = document.getElementById('sessionDetailContent');
@@ -5182,6 +5917,9 @@
               <button onclick="switchSessionTab('summary')" id="sessionTabSummary" class="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-white -mb-px">
                 📋 요약
               </button>
+              <button onclick="switchSessionTab('insights')" id="sessionTabInsights" class="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-white -mb-px">
+                🔍 인사이트
+              </button>
             </div>
             <!-- 내보내기 버튼 -->
             <div class="flex gap-2">
@@ -5260,6 +5998,13 @@
               </div>
             </div>
           </div>
+
+          <!-- 인사이트 탭 (Phase 4.2) -->
+          <div id="sessionInsightsPane" class="hidden">
+            <div id="sessionInsightsContent">
+              <div class="text-center py-8 text-gray-500">🔍 인사이트 탭을 클릭하면 AI 분석이 시작됩니다.</div>
+            </div>
+          </div>
         `;
 
         modal.style.display = 'flex';
@@ -5273,16 +6018,18 @@
     }
 
     function switchSessionTab(tab) {
-      const tabs = ['overview', 'conversation', 'summary'];
+      const tabs = ['overview', 'conversation', 'summary', 'insights'];
       const tabElements = {
         overview: document.getElementById('sessionTabOverview'),
         conversation: document.getElementById('sessionTabConversation'),
-        summary: document.getElementById('sessionTabSummary')
+        summary: document.getElementById('sessionTabSummary'),
+        insights: document.getElementById('sessionTabInsights')
       };
       const paneElements = {
         overview: document.getElementById('sessionOverviewPane'),
         conversation: document.getElementById('sessionConversationPane'),
-        summary: document.getElementById('sessionSummaryPane')
+        summary: document.getElementById('sessionSummaryPane'),
+        insights: document.getElementById('sessionInsightsPane')
       };
 
       // 모든 탭 비활성화
@@ -5303,6 +6050,11 @@
       }
       if (paneElements[tab]) {
         paneElements[tab].classList.remove('hidden');
+      }
+
+      // 인사이트 탭 클릭 시 로딩
+      if (tab === 'insights' && currentSessionForInsights) {
+        loadSessionInsightsTab(currentSessionForInsights.id, currentSessionForInsights.projectPath);
       }
     }
 
@@ -5389,6 +6141,7 @@
     function closeSessionModal() {
       document.getElementById('sessionDetailModal').style.display = 'none';
       currentSessionData = null;
+      insightsLoadedFor = null;
     }
 
     // 마크다운 다운로드
@@ -7481,6 +8234,8 @@
       const container = document.getElementById('notesList');
       let items = [];
 
+      const categoryFilters = ['learning', 'work', 'idea', 'todo', 'issue', 'personal'];
+
       if (notesFilter === 'all') {
         items = [
           ...notesData.backlogs.filter(b => !b.done).map(b => ({ ...b, _type: 'backlog' })),
@@ -7492,6 +8247,8 @@
         items = notesData.memos;
       } else if (notesFilter === 'done') {
         items = notesData.backlogs.filter(b => b.done);
+      } else if (categoryFilters.includes(notesFilter)) {
+        items = notesData.memos.filter(m => m.category === notesFilter);
       }
 
       // 시간순 정렬 (최신 먼저) - 단 "all" 필터에서 백로그는 상단
@@ -7504,9 +8261,15 @@
           all: '노트가 없습니다. 메모나 백로그를 추가해보세요!',
           backlog: '미완료 백로그가 없습니다.',
           memo: '메모가 없습니다.',
-          done: '완료된 백로그가 없습니다.'
+          done: '완료된 백로그가 없습니다.',
+          learning: '📚 학습 메모가 없습니다.',
+          work: '💼 업무 메모가 없습니다.',
+          idea: '💡 아이디어 메모가 없습니다.',
+          todo: '✅ 할일 메모가 없습니다.',
+          issue: '🐛 이슈 메모가 없습니다.',
+          personal: '🏠 개인 메모가 없습니다.'
         };
-        container.innerHTML = `<div class="text-center text-gray-500 py-12">${emptyMsg[notesFilter]}</div>`;
+        container.innerHTML = `<div class="text-center text-gray-500 py-12">${emptyMsg[notesFilter] || '메모가 없습니다.'}</div>`;
         return;
       }
 
@@ -7584,13 +8347,18 @@
       `;
     }
 
+    const MEMO_CATEGORY_ICONS = {
+      work: '💼', learning: '📚', idea: '💡',
+      todo: '✅', issue: '🐛', personal: '🏠'
+    };
+
     function renderMemoItem(m) {
       const timeStr = (m.timestamp || m.createdAt) ?
         new Date(m.timestamp || m.createdAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
         : (m.time || '');
       const isObsidian = m._source === 'obsidian';
       const borderColor = isObsidian ? 'border-l-green-500 bg-green-900/10' : 'border-l-purple-500 bg-purple-900/10';
-      const icon = isObsidian ? '📓' : '📝';
+      const icon = m.category ? (MEMO_CATEGORY_ICONS[m.category] || '📝') : (isObsidian ? '📓' : '📝');
       const rawContent = m.content || m.text || '';
       const hasMultiline = rawContent.includes('\n');
       const hasMarkdown = /[*_`#\[\]]/.test(rawContent) || hasMultiline;
@@ -7601,10 +8369,18 @@
         ? `<button onclick="deleteMemo('${m.id}')" class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-red-400 hover:bg-red-400/10 transition-all text-lg" title="삭제">&times;</button>`
         : '';
 
+      // 태그 뱃지
+      const tagBadges = (m.tags || []).map(tag =>
+        `<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-gray-700/70 text-gray-400 border border-gray-600/50">#${escapeHtml(tag)}</span>`
+      ).join(' ');
+
       return `
         <div class="flex items-start gap-3 p-4 rounded-lg border border-gray-700/50 border-l-2 ${borderColor} hover:bg-gray-800/50 transition-colors group">
           <span class="flex-shrink-0 mt-0.5">${icon}</span>
-          <div class="flex-1 min-w-0">${renderedContent}</div>
+          <div class="flex-1 min-w-0">
+            ${renderedContent}
+            ${tagBadges ? `<div class="flex flex-wrap gap-1 mt-1.5">${tagBadges}</div>` : ''}
+          </div>
           <div class="flex items-center gap-2 flex-shrink-0 mt-0.5">
             ${isObsidian ? '<span class="text-xs text-green-600 whitespace-nowrap">Obsidian</span>' : ''}
             <span class="text-xs text-gray-600 whitespace-nowrap">${timeStr}</span>
@@ -8533,6 +9309,495 @@
       // URL 파라미터 처리
       handleUrlParams();
     })();
+
+    // ============ Obsidian 경로 미리보기 ============
+    function updateObsidianPreview() {
+      try {
+        const input = document.getElementById('settingsObsidianVaultPath');
+        const vaultPath = input?.value?.trim() || '(미설정)';
+        const preview = document.getElementById('obsidianExportPreview');
+        if (preview) {
+          preview.textContent = vaultPath !== '(미설정)' ? `${vaultPath}/Claude Sessions/YYYY-MM/` : '(Vault 경로를 설정하세요)';
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // ============ Phase 4: AI Deep Integration ============
+
+    let knowledgeNetwork = null;
+    let knowledgeGraphData = null;
+
+    // --- 4.1 세션 서브탭 ---
+    function showSessionsSubTab(sub) {
+      document.querySelectorAll('.sessions-sub-btn').forEach(btn => {
+        btn.className = 'sessions-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white';
+      });
+      const activeBtn = document.getElementById(`sessionsSub-${sub}`);
+      if (activeBtn) activeBtn.className = 'sessions-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white';
+
+      ['list', 'graph', 'review'].forEach(s => {
+        const panel = document.getElementById(`sessionsSubPanel-${s}`);
+        if (panel) panel.classList.toggle('hidden', s !== sub);
+      });
+
+      if (sub === 'graph' && !knowledgeNetwork) {
+        loadKnowledgeGraphUI();
+      }
+      if (sub === 'review') {
+        loadReviewAnalysisCache();
+      }
+    }
+
+    // --- 4.2 세션 인사이트 ---
+
+    async function loadSessionInsightsTab(sessionId, projectPath) {
+      if (insightsLoadedFor === sessionId) return;
+      insightsLoadedFor = sessionId;
+
+      const contentDiv = document.getElementById('sessionInsightsContent');
+      if (!contentDiv) return;
+
+      contentDiv.innerHTML = `
+        <div class="flex items-center justify-center gap-2 text-gray-500 py-8">
+          <div class="w-4 h-4 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin"></div>
+          <span>인사이트 로드 중...</span>
+        </div>`;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/insights?project=${encodeURIComponent(projectPath)}`);
+        const data = await res.json();
+
+        if (data.cached || data.insights) {
+          renderSessionInsights(data.insights);
+        } else if (data.taskId) {
+          contentDiv.innerHTML = `
+            <div class="flex items-center justify-center gap-2 text-blue-400 py-8">
+              <div class="w-4 h-4 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin"></div>
+              <span>AI 분석 생성 중... (최대 1분)</span>
+            </div>`;
+
+          // 폴링
+          const pollInterval = setInterval(async () => {
+            try {
+              const taskRes = await fetch(`${API_BASE}/api/tasks/${data.taskId}`);
+              const task = await taskRes.json();
+              if (task.status === 'completed' && task.result?.insights) {
+                clearInterval(pollInterval);
+                renderSessionInsights(task.result.insights);
+              } else if (task.status === 'failed') {
+                clearInterval(pollInterval);
+                contentDiv.innerHTML = `<div class="text-center text-red-400 py-8">인사이트 생성 실패: ${escapeHtml(task.error || '알 수 없는 오류')}</div>`;
+                insightsLoadedFor = null;
+              }
+            } catch { /* 무시 */ }
+          }, 2000);
+
+          setTimeout(() => {
+            clearInterval(pollInterval);
+            if (contentDiv.querySelector('.animate-spin')) {
+              contentDiv.innerHTML = '<div class="text-center text-yellow-400 py-8">분석 시간 초과. 나중에 다시 시도해주세요.</div>';
+              insightsLoadedFor = null;
+            }
+          }, 90000);
+        }
+      } catch (err) {
+        contentDiv.innerHTML = `<div class="text-center text-red-400 py-8">로드 실패: ${escapeHtml(err.message)}</div>`;
+        insightsLoadedFor = null;
+      }
+    }
+
+    function renderSessionInsights(insights) {
+      const contentDiv = document.getElementById('sessionInsightsContent');
+      if (!contentDiv) return;
+
+      const complexityColors = { low: 'text-green-400', medium: 'text-yellow-400', high: 'text-red-400' };
+      const complexityIcons = { low: '🟢', medium: '🟡', high: '🔴' };
+
+      contentDiv.innerHTML = `
+        <!-- 요약 -->
+        <div class="bg-gradient-to-r from-blue-900/30 to-purple-900/30 rounded-lg p-4 border border-blue-500/30 mb-4">
+          <div class="flex items-start gap-3">
+            <div class="text-2xl">${complexityIcons[insights.complexity] || '⚪'}</div>
+            <div>
+              <div class="text-xs text-gray-400 mb-1">요약</div>
+              <div class="text-sm font-medium">${escapeHtml(insights.summary || '요약 없음')}</div>
+              <div class="text-xs text-gray-500 mt-1">복잡도: <span class="${complexityColors[insights.complexity] || ''}">${insights.complexity || 'unknown'}</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 토픽 & 기술 -->
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div class="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+            <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-3">📚 다룬 주제</h4>
+            <div class="flex flex-wrap gap-2">
+              ${(insights.topics || []).map(t => `<span class="inline-block px-2.5 py-1 rounded-full bg-blue-600/20 text-blue-300 text-xs border border-blue-500/30">${escapeHtml(t)}</span>`).join('') || '<span class="text-xs text-gray-500">없음</span>'}
+            </div>
+          </div>
+          <div class="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+            <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-3">🔧 사용 기술</h4>
+            <div class="flex flex-wrap gap-2">
+              ${(insights.technologies || []).map(t => `<span class="inline-block px-2.5 py-1 rounded-full bg-green-600/20 text-green-300 text-xs border border-green-500/30">${escapeHtml(t)}</span>`).join('') || '<span class="text-xs text-gray-500">없음</span>'}
+            </div>
+          </div>
+        </div>
+
+        ${(insights.problems_solved?.length) ? `
+        <div class="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50 mb-4">
+          <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-3">✅ 해결한 문제</h4>
+          <ul class="space-y-2">
+            ${insights.problems_solved.map(p => `<li class="flex items-start gap-2 text-sm"><span class="text-green-400 flex-shrink-0 mt-0.5">•</span><span>${escapeHtml(p)}</span></li>`).join('')}
+          </ul>
+        </div>` : ''}
+
+        ${(insights.key_decisions?.length) ? `
+        <div class="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50 mb-4">
+          <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-3">🎯 주요 결정</h4>
+          <ul class="space-y-2">
+            ${insights.key_decisions.map(d => `<li class="flex items-start gap-2 text-sm"><span class="text-yellow-400 flex-shrink-0 mt-0.5">•</span><span>${escapeHtml(d)}</span></li>`).join('')}
+          </ul>
+        </div>` : ''}
+
+        ${(insights.files_modified?.length) ? `
+        <div class="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+          <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-3">📁 주요 파일</h4>
+          <div class="flex flex-wrap gap-2">
+            ${insights.files_modified.slice(0, 15).map(f => `<span class="inline-block px-2 py-1 rounded bg-gray-700/70 text-gray-300 text-xs font-mono border border-gray-600/50">${escapeHtml(f)}</span>`).join('')}
+          </div>
+        </div>` : ''}
+      `;
+    }
+
+    // --- 4.3 지식 그래프 ---
+    async function loadKnowledgeGraphUI() {
+      const minMentions = document.getElementById('graphMinMentions')?.value || '2';
+      const container = document.getElementById('knowledgeGraphContainer');
+
+      try {
+        const res = await fetch(`${API_BASE}/api/knowledge-graph?minMentions=${minMentions}`);
+        const data = await res.json();
+        knowledgeGraphData = data;
+
+        // 통계 표시
+        const statsDiv = document.getElementById('knowledgeGraphStats');
+        if (statsDiv) {
+          statsDiv.innerHTML = `
+            <span>노드: <strong class="text-gray-300">${data.nodes?.length || 0}</strong></span>
+            <span>연결: <strong class="text-gray-300">${data.edges?.length || 0}</strong></span>
+            ${data.metadata?.lastUpdated ? `<span>마지막 업데이트: <strong class="text-gray-300">${new Date(data.metadata.lastUpdated).toLocaleDateString('ko-KR')}</strong></span>` : ''}
+          `;
+        }
+
+        if (!data.nodes || data.nodes.length === 0) {
+          container.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500 text-sm">지식 그래프가 비어있습니다.<br>세션 인사이트를 생성하거나 메모를 추가해보세요.</div>';
+          return;
+        }
+
+        renderKnowledgeGraphVis(data);
+      } catch (err) {
+        container.innerHTML = `<div class="flex items-center justify-center h-full text-red-400">로드 실패: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderKnowledgeGraphVis(graphData) {
+      const container = document.getElementById('knowledgeGraphContainer');
+      container.innerHTML = '';
+
+      const categoryColors = {
+        work: { background: '#f59e0b', border: '#d97706' },
+        learning: { background: '#3b82f6', border: '#2563eb' },
+        idea: { background: '#8b5cf6', border: '#7c3aed' },
+        issue: { background: '#ef4444', border: '#dc2626' },
+        personal: { background: '#10b981', border: '#059669' },
+        todo: { background: '#06b6d4', border: '#0891b2' },
+        general: { background: '#6b7280', border: '#4b5563' }
+      };
+
+      const nodes = new vis.DataSet(
+        graphData.nodes.map(n => ({
+          id: n.id,
+          label: n.label,
+          value: n.mentions,
+          color: categoryColors[n.category] || categoryColors.general,
+          font: { color: '#f3f4f6', size: 14 },
+          title: `<b>${n.label}</b><br>언급: ${n.mentions}회<br>마지막: ${n.lastSeen}<br>세션: ${n.sources?.sessions?.length || 0}개 | 메모: ${n.sources?.memos?.length || 0}개`
+        }))
+      );
+
+      const edges = new vis.DataSet(
+        graphData.edges.map((e, i) => ({
+          id: `edge-${i}`,
+          from: e.from,
+          to: e.to,
+          value: e.strength,
+          color: { color: '#4b5563', highlight: '#9ca3af' },
+          title: `${e.context}<br>강도: ${e.strength}`
+        }))
+      );
+
+      const options = {
+        nodes: {
+          shape: 'dot',
+          scaling: { min: 12, max: 40, label: { enabled: true, min: 12, max: 18 } }
+        },
+        edges: {
+          width: 1,
+          scaling: { min: 1, max: 5 },
+          smooth: { type: 'continuous' }
+        },
+        physics: {
+          barnesHut: { gravitationalConstant: -4000, centralGravity: 0.3, springLength: 120, springConstant: 0.04 },
+          stabilization: { enabled: true, iterations: 200 }
+        },
+        interaction: {
+          hover: true,
+          tooltipDelay: 100,
+          navigationButtons: true,
+          keyboard: { enabled: false }
+        }
+      };
+
+      if (knowledgeNetwork) knowledgeNetwork.destroy();
+      knowledgeNetwork = new vis.Network(container, { nodes, edges }, options);
+
+      knowledgeNetwork.on('click', (params) => {
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          const node = graphData.nodes.find(n => n.id === nodeId);
+          if (node) showTopicDetail(node);
+        }
+      });
+
+      knowledgeNetwork.on('doubleClick', (params) => {
+        if (params.nodes.length > 0) {
+          const nodeId = params.nodes[0];
+          const node = graphData.nodes.find(n => n.id === nodeId);
+          if (node) showTopicRecommendations(node.label);
+        }
+      });
+    }
+
+    function showTopicDetail(node) {
+      const modal = document.getElementById('sessionDetailModal');
+      const content = document.getElementById('sessionDetailContent');
+
+      content.innerHTML = `
+        <div class="flex justify-between items-center mb-6">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-lg">🔍</div>
+            <div>
+              <h3 class="text-lg font-bold">${escapeHtml(node.label)}</h3>
+              <p class="text-xs text-gray-400">${node.mentions}회 언급 · 마지막: ${node.lastSeen}</p>
+            </div>
+          </div>
+          <button onclick="closeSessionModal()" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div class="bg-gray-700/30 rounded-lg p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">관련 세션</div>
+            <div class="text-2xl font-bold text-purple-400">${node.sources?.sessions?.length || 0}</div>
+          </div>
+          <div class="bg-gray-700/30 rounded-lg p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">관련 메모</div>
+            <div class="text-2xl font-bold text-green-400">${node.sources?.memos?.length || 0}</div>
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          <button onclick="showTopicRecommendations('${escapeHtml(node.label)}')" class="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors">
+            💡 관련 추천 보기
+          </button>
+        </div>
+      `;
+
+      modal.style.display = 'flex';
+    }
+
+    async function showTopicRecommendations(topic) {
+      try {
+        const res = await fetch(`${API_BASE}/api/knowledge-graph/recommendations?topic=${encodeURIComponent(topic)}`);
+        const data = await res.json();
+
+        const modal = document.getElementById('sessionDetailModal');
+        const content = document.getElementById('sessionDetailContent');
+
+        content.innerHTML = `
+          <div class="flex justify-between items-center mb-6">
+            <h3 class="text-lg font-bold">💡 "${escapeHtml(topic)}" 관련 추천</h3>
+            <button onclick="closeSessionModal()" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+          </div>
+
+          ${data.related?.length > 0 ? `
+          <div class="mb-6">
+            <h4 class="text-sm font-semibold text-blue-400 mb-3">🔗 관련 주제</h4>
+            <div class="space-y-2">
+              ${data.related.map(r => `
+                <div class="bg-gray-700/30 rounded-lg p-3 hover:bg-gray-700/50 transition-colors">
+                  <div class="font-medium text-sm">${escapeHtml(r.topic)}</div>
+                  <div class="text-xs text-gray-400 mt-0.5">${escapeHtml(r.reason)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>` : '<div class="mb-6 text-gray-500 text-sm">관련 주제가 없습니다.</div>'}
+
+          ${data.review_needed?.length > 0 ? `
+          <div>
+            <h4 class="text-sm font-semibold text-yellow-400 mb-3">📚 복습 추천</h4>
+            <div class="space-y-2">
+              ${data.review_needed.map(r => `
+                <div class="bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-3">
+                  <div class="font-medium text-sm">${escapeHtml(r.topic)}</div>
+                  <div class="text-xs text-gray-400 mt-0.5">${escapeHtml(r.reason)} · 마지막: ${r.lastSeen}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>` : ''}
+        `;
+
+        modal.style.display = 'flex';
+      } catch (err) {
+        showToast('추천 로드 실패: ' + err.message, 'error');
+      }
+    }
+
+    async function rebuildKnowledgeGraphUI() {
+      try {
+        showToast('지식 그래프 재구성 중...', 'info');
+        const res = await fetch(`${API_BASE}/api/knowledge-graph/rebuild`, { method: 'POST' });
+        const data = await res.json();
+        showToast(`재구성 완료: ${data.nodes}개 노드, ${data.edges}개 연결`, 'success');
+        knowledgeNetwork = null;
+        loadKnowledgeGraphUI();
+      } catch (err) {
+        showToast('재구성 실패: ' + err.message, 'error');
+      }
+    }
+
+    // --- 4.4 코드 리뷰 분석 ---
+    async function loadReviewAnalysisCache() {
+      const container = document.getElementById('reviewAnalysisContent');
+      try {
+        const res = await fetch(`${API_BASE}/api/github/review-analysis`);
+        const data = await res.json();
+        if (data.analysis) {
+          renderReviewAnalysis(data.analysis);
+        }
+      } catch { /* 캐시 없으면 무시 */ }
+    }
+
+    async function generateReviewAnalysis() {
+      const container = document.getElementById('reviewAnalysisContent');
+      const days = document.getElementById('reviewDays')?.value || '30';
+
+      container.innerHTML = `
+        <div class="flex items-center justify-center gap-2 text-blue-400 py-12">
+          <div class="w-5 h-5 border-2 border-gray-600 border-t-blue-400 rounded-full animate-spin"></div>
+          <span>리뷰 분석 생성 중... (최대 2분)</span>
+        </div>`;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/github/review-analysis`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ days: parseInt(days) })
+        });
+        const data = await res.json();
+
+        if (data.cached) {
+          renderReviewAnalysis(data);
+          return;
+        }
+
+        if (data.taskId) {
+          const pollInterval = setInterval(async () => {
+            try {
+              const taskRes = await fetch(`${API_BASE}/api/tasks/${data.taskId}`);
+              const task = await taskRes.json();
+              if (task.status === 'completed' && task.result) {
+                clearInterval(pollInterval);
+                renderReviewAnalysis(task.result);
+                showToast('리뷰 분석 완료', 'success');
+              } else if (task.status === 'failed') {
+                clearInterval(pollInterval);
+                container.innerHTML = `<div class="text-center text-red-400 py-12">분석 실패: ${escapeHtml(task.error || '')}</div>`;
+              }
+            } catch { /* 무시 */ }
+          }, 3000);
+
+          setTimeout(() => { clearInterval(pollInterval); }, 180000);
+        }
+      } catch (err) {
+        container.innerHTML = `<div class="text-center text-red-400 py-12">분석 실패: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderReviewAnalysis(data) {
+      const container = document.getElementById('reviewAnalysisContent');
+      const analysis = data.analysis || data;
+      const checklistCategoryColors = {
+        security: 'border-red-500/50 bg-red-900/20', performance: 'border-yellow-500/50 bg-yellow-900/20',
+        style: 'border-blue-500/50 bg-blue-900/20', testing: 'border-green-500/50 bg-green-900/20'
+      };
+
+      container.innerHTML = `
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <div class="bg-gray-700/30 rounded-lg p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">분석 기간</div>
+            <div class="text-lg font-bold text-gray-300">${escapeHtml(data.period || '')}</div>
+          </div>
+          <div class="bg-gray-700/30 rounded-lg p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">리뷰 수</div>
+            <div class="text-lg font-bold text-purple-400">${data.reviewCount || 0}</div>
+          </div>
+          <div class="bg-gray-700/30 rounded-lg p-4 text-center">
+            <div class="text-xs text-gray-500 mb-1">리뷰 스타일</div>
+            <div class="text-sm text-gray-300">${escapeHtml(analysis.review_style || '-')}</div>
+          </div>
+        </div>
+
+        ${analysis.summary ? `
+        <div class="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-lg p-4 border border-purple-500/30 mb-6">
+          <h4 class="text-xs text-gray-400 uppercase tracking-wide mb-2">요약</h4>
+          <p class="text-sm">${escapeHtml(analysis.summary)}</p>
+        </div>` : ''}
+
+        ${analysis.common_patterns?.length ? `
+        <div class="mb-6">
+          <h4 class="text-sm font-semibold text-amber-400 mb-3">🔍 자주 지적하는 패턴</h4>
+          <ul class="space-y-2">
+            ${analysis.common_patterns.map(p => `<li class="flex items-start gap-2 text-sm"><span class="text-amber-400">•</span>${escapeHtml(p)}</li>`).join('')}
+          </ul>
+        </div>` : ''}
+
+        ${analysis.suggestions?.length ? `
+        <div class="mb-6">
+          <h4 class="text-sm font-semibold text-blue-400 mb-3">💡 개선 제안</h4>
+          <ul class="space-y-2">
+            ${analysis.suggestions.map(s => `<li class="flex items-start gap-2 text-sm"><span class="text-blue-400">•</span>${escapeHtml(s)}</li>`).join('')}
+          </ul>
+        </div>` : ''}
+
+        ${analysis.checklist?.length ? `
+        <div>
+          <h4 class="text-sm font-semibold text-green-400 mb-3">✅ 리뷰 체크리스트</h4>
+          <div class="space-y-2">
+            ${analysis.checklist.map(c => {
+              const colors = checklistCategoryColors[c.category] || 'border-gray-500/50 bg-gray-900/20';
+              return `<div class="flex items-start gap-3 p-3 rounded-lg border ${colors}">
+                <span class="text-xs px-1.5 py-0.5 rounded ${colors} font-medium uppercase">${escapeHtml(c.category || '')}</span>
+                <span class="text-sm">${escapeHtml(c.item)}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>` : ''}
+
+        <div class="text-xs text-gray-600 mt-4 text-right">
+          생성: ${data.createdAt ? new Date(data.createdAt).toLocaleDateString('ko-KR') : '-'}
+        </div>
+      `;
+    }
+
   </script>
 </body>
 </html>

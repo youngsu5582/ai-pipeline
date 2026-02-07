@@ -290,7 +290,7 @@
       "description": "AWS CloudWatch 에러 로그 감지 후 Slack 알림",
       "command": "python scripts/cloudwatch_alert.py",
       "schedule": "0 * * * *",
-      "enabled": true,
+      "enabled": false,
       "category": "monitor",
       "tags": [
         "aws",
@@ -1242,6 +1242,35 @@
     "dashboardUrl": "http://localhost:3030",
     "refreshInterval": 5,
     "defaultTimeout": 10,
-    "defaultRetry": 0
+    "defaultRetry": 0,
+    "notifications": {
+      "channels": [
+        {
+          "id": "slack-main",
+          "type": "slack",
+          "name": "기본 Slack",
+          "webhookUrl": "REDACTED_WEBHOOK_URL",
+          "enabled": true
+        }
+      ],
+      "rules": [
+        {
+          "id": "rule-migrated-1",
+          "event": "job.failed",
+          "channels": [
+            "slack-main"
+          ],
+          "filter": {}
+        },
+        {
+          "id": "rule-migrated-2",
+          "event": "job.success",
+          "channels": [
+            "slack-main"
+          ],
+          "filter": {}
+        }
+      ]
+    }
   }
 }

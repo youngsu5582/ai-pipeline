@@ -7,6 +7,7 @@ const cors = require('cors');
 const https = require('https');
 const http = require('http');
 const os = require('os');
+const crypto = require('crypto');
 
 // KST 날짜 헬퍼 (Asia/Seoul)
 function getKSTDateString(date) {
@@ -84,9 +85,9 @@ function updateTaskProgress(task, progress, message) {
 const app = express();
 
 // Slack 알림 전송
-function sendSlackNotification(job, status, result = {}) {
+function sendSlackNotification(job, status, result = {}, overrideWebhookUrl = null) {
   // 설정에서 먼저 확인, 없으면 환경변수 사용
-  const webhookUrl = getSettingValue('slackWebhookUrl', '') || process.env.SLACK_WEBHOOK_URL;
+  const webhookUrl = overrideWebhookUrl || getSettingValue('slackWebhookUrl', '') || process.env.SLACK_WEBHOOK_URL;
   if (!webhookUrl) {
     console.log('[Slack] Webhook URL 없음 - 알림 스킵');
     return Promise.resolve();
@@ -220,6 +221,95 @@ function sendSlackNotification(job, status, result = {}) {
     req.end();
   });
 }
+
+// Discord 알림 전송
+function sendDiscordNotification(job, status, result = {}, webhookUrl) {
+  if (!webhookUrl) return Promise.resolve();
+
+  const color = status === 'success' ? 0x10b981 : 0xef4444;
+  const emoji = status === 'success' ? '✅' : '❌';
+  const duration = result.duration ? `${(result.duration / 1000).toFixed(1)}초` : '-';
+  const dashboardUrl = getSettingValue('dashboardUrl', DASHBOARD_URL);
+
+  const embed = {
+    title: `${emoji} ${job.name} - ${status === 'success' ? '성공' : '실패'}`,
+    color,
+    fields: [
+      { name: '작업', value: job.name, inline: true },
+      { name: '소요 시간', value: duration, inline: true },
+      { name: '트리거', value: result.trigger || 'manual', inline: true }
+    ],
+    timestamp: new Date().toISOString()
+  };
+
+  if (status === 'failed' && result.stderr) {
+    embed.description = '```' + result.stderr.substring(0, 500) + '```';
+  }
+  if (result.logId) {
+    embed.url = `${dashboardUrl}?tab=history&logId=${result.logId}`;
+  }
+
+  return new Promise((resolve, reject) => {
+    const url = new URL(webhookUrl);
+    const protocol = url.protocol === 'https:' ? https : http;
+    const options = {
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    };
+    const req = protocol.request(options, (res) => {
+      res.statusCode < 300 ? resolve() : reject(new Error(`Discord API error: ${res.statusCode}`));
+    });
+    req.on('error', reject);
+    req.write(JSON.stringify({ embeds: [embed] }));
+    req.end();
+  });
+}
+
+// 알림 규칙 기반 디스패치
+async function sendNotification(event, data) {
+  const jobsData = loadJobs();
+  const settings = jobsData.settings || {};
+  const notifications = settings.notifications;
+  if (!notifications) return;
+
+  const channels = notifications.channels || [];
+  const rules = notifications.rules || [];
+
+  const matchingRules = rules.filter(r => r.event === event);
+  for (const rule of matchingRules) {
+    if (rule.filter?.category && data.job?.category !== rule.filter.category) continue;
+    if (rule.filter?.jobId && data.job?.id !== rule.filter.jobId) continue;
+
+    for (const channelId of rule.channels) {
+      const channel = channels.find(c => c.id === channelId && c.enabled);
+      if (!channel) continue;
+
+      try {
+        switch (channel.type) {
+          case 'slack':
+            await sendSlackNotification(data.job, data.status, data.result, channel.webhookUrl);
+            break;
+          case 'discord':
+            await sendDiscordNotification(data.job, data.status, data.result, channel.webhookUrl);
+            break;
+          case 'native':
+            sendSSEEvent('notification', {
+              title: `${data.status === 'success' ? '✅' : '❌'} ${data.job.name}`,
+              body: event,
+              status: data.status
+            });
+            break;
+        }
+      } catch (err) {
+        console.error(`[Notify] ${channel.id} 전송 실패:`, err.message);
+      }
+    }
+  }
+}
+
 const PORT = process.env.PORT || 3030;
 let DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:3030';
 
@@ -375,6 +465,33 @@ function saveHistory() {
 }
 
 /**
+ * 엣지 조건 평가
+ */
+function evaluateEdgeCondition(edge, status, logEntry, exitCode) {
+  if (edge.condition) {
+    const cond = edge.condition;
+    switch (cond.type) {
+      case 'onSuccess': return status === 'success';
+      case 'onFailure': return status === 'failed';
+      case 'always': return true;
+      case 'onOutput':
+        if (!logEntry?.stdout) return false;
+        if (cond.matchType === 'regex') {
+          try { return new RegExp(cond.pattern).test(logEntry.stdout); }
+          catch (e) { return false; }
+        }
+        return logEntry.stdout.includes(cond.pattern || '');
+      case 'onExitCode':
+        return exitCode === cond.code;
+      default: return false;
+    }
+  }
+  // 하위 호환: 기존 trigger/onSuccess boolean
+  if (!edge.trigger) return false;
+  return edge.onSuccess === false || status === 'success';
+}
+
+/**
  * 작업 완료 후 연결된 다음 작업들을 실행 (파이프라인 체이닝)
  * @param {string} jobId - 완료된 작업 ID
  * @param {string} status - 'success' | 'failed'
@@ -391,11 +508,11 @@ function triggerNextJobs(jobId, status, prevLog, depth = 0) {
   const data = loadJobs();
   const edges = data.edges || [];
 
-  // 이 작업에서 나가는 trigger edge 찾기
+  const exitCode = prevLog?.exitCode ?? (status === 'success' ? 0 : 1);
+
+  // 이 작업에서 나가는 트리거 엣지 찾기 (조건 평가)
   const triggerEdges = edges.filter(e =>
-    e.from === jobId &&
-    e.trigger === true &&
-    (e.onSuccess === false || status === 'success')
+    e.from === jobId && evaluateEdgeCondition(e, status, prevLog, exitCode)
   );
 
   if (triggerEdges.length === 0) return;
@@ -409,7 +526,8 @@ function triggerNextJobs(jobId, status, prevLog, depth = 0) {
       continue;
     }
 
-    console.log(`[Chain] Starting: ${nextJob.name}`);
+    const condLabel = edge.condition?.type || 'legacy';
+    console.log(`[Chain] Starting: ${nextJob.name} (condition: ${condLabel})`);
 
     // 기본 옵션으로 다음 작업 실행
     const defaultOptions = getDefaultOptionsFromJob(nextJob);
@@ -526,6 +644,7 @@ function executeJob(job, trigger = 'manual', options = {}, chainDepth = 0, retry
 
       logEntry.endTime = endTime.toISOString();
       logEntry.duration = duration;
+      logEntry.exitCode = code;
 
       // 실행 중인 작업에서 제거
       delete runningJobs[job.id];
@@ -557,6 +676,8 @@ function executeJob(job, trigger = 'manual', options = {}, chainDepth = 0, retry
             logId: logEntry.id
           }).catch(err => console.error('[Slack] 알림 전송 실패:', err.message));
         }
+        sendNotification('job.failed', { job, status: 'failed', result: { duration, error: logEntry.error, stdout: logEntry.stdout, stderr: logEntry.stderr, logId: logEntry.id, trigger } })
+          .catch(err => console.error('[Notify]', err.message));
 
         triggerNextJobs(job.id, 'failed', logEntry, chainDepth);
         reject(new Error(`Timeout after ${timeout}ms`));
@@ -621,6 +742,8 @@ function executeJob(job, trigger = 'manual', options = {}, chainDepth = 0, retry
             logId: logEntry.id
           }).catch(err => console.error('[Slack] 알림 전송 실패:', err.message));
         }
+        sendNotification('job.failed', { job, status: 'failed', result: { duration, error: logEntry.error, stdout: logEntry.stdout, stderr: logEntry.stderr, logId: logEntry.id, trigger } })
+          .catch(err => console.error('[Notify]', err.message));
 
         // 체이닝: 다음 작업 실행 (실패 시에도 onSuccess=false인 edge는 실행)
         triggerNextJobs(job.id, 'failed', logEntry, chainDepth);
@@ -640,6 +763,8 @@ function executeJob(job, trigger = 'manual', options = {}, chainDepth = 0, retry
             logId: logEntry.id
           }).catch(err => console.error('[Slack] 알림 전송 실패:', err.message));
         }
+        sendNotification('job.success', { job, status: 'success', result: { duration, stdout: logEntry.stdout, logId: logEntry.id, trigger } })
+          .catch(err => console.error('[Notify]', err.message));
 
         // 체이닝: 다음 작업 실행
         triggerNextJobs(job.id, 'success', logEntry, chainDepth);
@@ -916,9 +1041,15 @@ app.post('/api/edges', (req, res) => {
     from,
     to,
     label: label || '',
-    trigger: trigger ?? false,     // 기본값 false (시각적 연결만)
-    onSuccess: onSuccess ?? true   // 기본값 true (성공 시에만)
+    trigger: trigger ?? false,
+    onSuccess: onSuccess ?? true,
+    condition: req.body.condition || null
   };
+  // condition이 있으면 trigger/onSuccess 자동 동기화
+  if (newEdge.condition) {
+    newEdge.trigger = true;
+    newEdge.onSuccess = newEdge.condition.type === 'onSuccess';
+  }
 
   data.edges.push(newEdge);
   saveJobs(data);
@@ -938,10 +1069,17 @@ app.put('/api/edges/:id', (req, res) => {
     return res.status(404).json({ error: 'Edge not found' });
   }
 
-  const { label, trigger, onSuccess } = req.body;
+  const { label, trigger, onSuccess, condition } = req.body;
   if (label !== undefined) data.edges[index].label = label;
   if (trigger !== undefined) data.edges[index].trigger = trigger;
   if (onSuccess !== undefined) data.edges[index].onSuccess = onSuccess;
+  if (condition !== undefined) {
+    data.edges[index].condition = condition;
+    if (condition) {
+      data.edges[index].trigger = true;
+      data.edges[index].onSuccess = condition.type === 'onSuccess';
+    }
+  }
 
   saveJobs(data);
   res.json(data.edges[index]);
@@ -1509,13 +1647,17 @@ app.get('/api/export/jobs', (req, res) => {
 app.get('/api/settings', (req, res) => {
   const data = loadJobs();
   const settings = data.settings || {};
+  const { vaultPath, dailyFolder } = getObsidianPaths();
   res.json({
     slackWebhookUrl: settings.slackWebhookUrl || '',
     slackEnabled: settings.slackEnabled || false,
     dashboardUrl: settings.dashboardUrl || 'http://localhost:3030',
     refreshInterval: settings.refreshInterval || 5,
     defaultTimeout: settings.defaultTimeout || 10,
-    defaultRetry: settings.defaultRetry || 0
+    defaultRetry: settings.defaultRetry || 0,
+    notifications: settings.notifications || { channels: [], rules: [] },
+    obsidianVaultPath: vaultPath,
+    obsidianDailyFolder: dailyFolder
   });
 });
 
@@ -1532,6 +1674,15 @@ app.put('/api/settings', (req, res) => {
       defaultTimeout: req.body.defaultTimeout || 10,
       defaultRetry: req.body.defaultRetry || 0
     };
+    if (req.body.notifications !== undefined) {
+      data.settings.notifications = req.body.notifications;
+    }
+    if (req.body.obsidianVaultPath !== undefined) {
+      data.settings.obsidianVaultPath = req.body.obsidianVaultPath;
+    }
+    if (req.body.obsidianDailyFolder !== undefined) {
+      data.settings.obsidianDailyFolder = req.body.obsidianDailyFolder;
+    }
     saveJobs(data);
 
     // 환경변수 동적 업데이트 (현재 세션에서만)
@@ -1542,6 +1693,121 @@ app.put('/api/settings', (req, res) => {
       global.DASHBOARD_URL = data.settings.dashboardUrl;
     }
 
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ Webhook Tokens API ============
+
+const WEBHOOK_TOKENS_FILE = path.join(__dirname, 'data', 'webhook-tokens.json');
+
+function loadWebhookTokens() {
+  try {
+    if (fs.existsSync(WEBHOOK_TOKENS_FILE)) {
+      return JSON.parse(fs.readFileSync(WEBHOOK_TOKENS_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  return [];
+}
+
+function saveWebhookTokens(tokens) {
+  const dir = path.dirname(WEBHOOK_TOKENS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(WEBHOOK_TOKENS_FILE, JSON.stringify(tokens, null, 2));
+}
+
+// 토큰 목록 (토큰 값은 마스킹)
+app.get('/api/webhook-tokens', (req, res) => {
+  const tokens = loadWebhookTokens();
+  res.json(tokens.map(t => ({ ...t, token: t.token.substring(0, 8) + '...' })));
+});
+
+// 토큰 생성
+app.post('/api/webhook-tokens', (req, res) => {
+  const { name, allowedJobs } = req.body;
+  const tokens = loadWebhookTokens();
+  const newToken = {
+    id: `tok-${Date.now()}`,
+    name: name || '새 토큰',
+    token: crypto.randomBytes(32).toString('hex'),
+    enabled: true,
+    allowedJobs: allowedJobs || [],
+    createdAt: new Date().toISOString(),
+    lastUsedAt: null,
+    usageCount: 0
+  };
+  tokens.push(newToken);
+  saveWebhookTokens(tokens);
+  res.status(201).json(newToken);  // 전체 토큰 반환 (한 번만)
+});
+
+// 토큰 수정 (활성/비활성, 이름 변경)
+app.put('/api/webhook-tokens/:id', (req, res) => {
+  const tokens = loadWebhookTokens();
+  const token = tokens.find(t => t.id === req.params.id);
+  if (!token) return res.status(404).json({ error: 'Token not found' });
+  if (req.body.enabled !== undefined) token.enabled = req.body.enabled;
+  if (req.body.name !== undefined) token.name = req.body.name;
+  if (req.body.allowedJobs !== undefined) token.allowedJobs = req.body.allowedJobs;
+  saveWebhookTokens(tokens);
+  res.json({ ...token, token: token.token.substring(0, 8) + '...' });
+});
+
+// 토큰 삭제
+app.delete('/api/webhook-tokens/:id', (req, res) => {
+  const tokens = loadWebhookTokens();
+  const index = tokens.findIndex(t => t.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Token not found' });
+  tokens.splice(index, 1);
+  saveWebhookTokens(tokens);
+  res.json({ success: true });
+});
+
+// 외부 웹훅 트리거
+app.post('/api/webhook/:token', (req, res) => {
+  const tokens = loadWebhookTokens();
+  const tokenData = tokens.find(t => t.token === req.params.token && t.enabled);
+  if (!tokenData) return res.status(401).json({ error: 'Invalid or disabled token' });
+
+  const { jobId, options } = req.body;
+  if (!jobId) return res.status(400).json({ error: 'jobId is required' });
+
+  const data = loadJobs();
+  const job = data.jobs.find(j => j.id === jobId);
+  if (!job) return res.status(404).json({ error: `Job '${jobId}' not found` });
+
+  if (tokenData.allowedJobs.length > 0 && !tokenData.allowedJobs.includes(jobId)) {
+    return res.status(403).json({ error: 'Job not allowed for this token' });
+  }
+
+  tokenData.lastUsedAt = new Date().toISOString();
+  tokenData.usageCount = (tokenData.usageCount || 0) + 1;
+  saveWebhookTokens(tokens);
+
+  const defaultOptions = getDefaultOptionsFromJob(job);
+  const mergedOptions = { ...defaultOptions, ...(options || {}) };
+  executeJob(job, 'webhook', mergedOptions)
+    .catch(err => console.error(`[Webhook] Failed to execute ${job.id}:`, err.message));
+
+  res.json({ success: true, message: `Job '${jobId}' triggered via webhook` });
+});
+
+// 알림 채널 테스트
+app.post('/api/notifications/test', async (req, res) => {
+  const { channel } = req.body;
+  if (!channel || !channel.type) return res.status(400).json({ error: 'channel required' });
+
+  const testJob = { name: '테스트 알림', id: 'test', category: 'test' };
+  try {
+    if (channel.type === 'slack') {
+      await sendSlackNotification(testJob, 'success', { duration: 1000 }, channel.webhookUrl);
+    } else if (channel.type === 'discord') {
+      await sendDiscordNotification(testJob, 'success', { duration: 1000 }, channel.webhookUrl);
+    } else if (channel.type === 'native') {
+      sendSSEEvent('notification', { title: '🔔 테스트 알림', body: '알림이 정상 작동합니다.', status: 'success' });
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1752,6 +2018,12 @@ async function processTask(task) {
         break;
       case 'weekly-digest':
         result = await processWeeklyDigestTask(task);
+        break;
+      case 'session-insights':
+        result = await processSessionInsightsTask(task);
+        break;
+      case 'review-analysis':
+        result = await processReviewAnalysisTask(task);
         break;
       default:
         throw new Error(`Unknown task type: ${task.type}`);
@@ -2942,6 +3214,17 @@ function parseSessionFile(sessionId, projectPath, options = {}) {
 // ============ Obsidian Daily Note 쓰기 헬퍼 ============
 function getObsidianPaths() {
   const yaml = require('js-yaml');
+
+  // 1순위: 대시보드 설정 (jobs.json)
+  const jobsData = loadJobs();
+  if (jobsData.settings?.obsidianVaultPath) {
+    return {
+      vaultPath: jobsData.settings.obsidianVaultPath.replace(/^~/, os.homedir()),
+      dailyFolder: jobsData.settings.obsidianDailyFolder || 'DAILY'
+    };
+  }
+
+  // 2순위: YAML 설정 파일
   const configPaths = [
     path.join(__dirname, '../config/settings.local.yaml'),
     path.join(__dirname, '../config/settings.yaml'),
@@ -3023,14 +3306,27 @@ function saveQuickMemos(memos) {
 // GET /api/quick-memos - 메모 목록 조회
 app.get('/api/quick-memos', (req, res) => {
   const { date } = req.query;
-  const memos = loadQuickMemos();
+  let memos = loadQuickMemos();
+  const categories = loadMemoCategories();
 
   if (date) {
-    const filtered = memos.filter(m => m.timestamp?.startsWith(date));
-    return res.json({ memos: filtered });
+    memos = memos.filter(m => {
+      if (!m.timestamp) return false;
+      // KST 기준으로 날짜 비교 (UTC timestamp → KST date)
+      const kstDate = getKSTDateString(new Date(m.timestamp));
+      return kstDate === date;
+    });
   }
 
-  res.json({ memos });
+  // 카테고리/태그 데이터 병합
+  const enriched = memos.map(m => ({
+    ...m,
+    category: categories[m.id]?.category || null,
+    tags: categories[m.id]?.tags || [],
+    autoTags: categories[m.id]?.autoTags || false
+  }));
+
+  res.json({ memos: enriched });
 });
 
 // POST /api/quick-memos - 메모 저장
@@ -3064,6 +3360,11 @@ app.post('/api/quick-memos', (req, res) => {
   appendToObsidianSection('## ⏰ 시간별 메모', `- \`${timeStr}\` ${content.trim()}`);
 
   res.json({ success: true, memo: newMemo });
+
+  // 백그라운드 자동 분류 (논블로킹)
+  classifyMemoBackground(newMemo.id, newMemo.content).catch(err =>
+    console.error('[MemoCategory] 분류 실패:', err.message)
+  );
 });
 
 // DELETE /api/quick-memos/:id - 메모 삭제
@@ -3343,12 +3644,15 @@ app.get('/api/obsidian/daily-memos', (req, res) => {
 });
 
 // 세션을 마크다운으로 변환
-function sessionToMarkdown(sessionData) {
+function sessionToMarkdown(sessionData, options = {}) {
+  const { summary, insights } = options;
   const lines = [];
   const date = sessionData.lastActivity ?
     new Date(sessionData.lastActivity).toLocaleDateString('ko-KR', {
       year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
     }) : '날짜 없음';
+
+  const complexityEmoji = { low: '🟢', medium: '🟡', high: '🔴' };
 
   lines.push(`# Claude Code 세션: ${sessionData.project}`);
   lines.push('');
@@ -3356,7 +3660,50 @@ function sessionToMarkdown(sessionData) {
   lines.push(`- **날짜**: ${date}`);
   lines.push(`- **메시지 수**: ${sessionData.messageCount}`);
   lines.push(`- **사용된 도구**: ${sessionData.toolsUsed.join(', ') || '없음'}`);
+  if (insights?.complexity) {
+    lines.push(`- **복잡도**: ${complexityEmoji[insights.complexity] || ''} ${insights.complexity}`);
+  }
   lines.push('');
+
+  // 인사이트 섹션
+  if (insights) {
+    lines.push('## 📊 인사이트');
+    lines.push('');
+    if (insights.summary) {
+      lines.push(`> ${insights.summary}`);
+      lines.push('');
+    }
+    if (insights.topics?.length) {
+      lines.push(`**주제**: ${insights.topics.map(t => `\`${t}\``).join(' ')}`);
+      lines.push('');
+    }
+    if (insights.technologies?.length) {
+      lines.push(`**기술**: ${insights.technologies.map(t => `\`${t}\``).join(' ')}`);
+      lines.push('');
+    }
+    if (insights.problems_solved?.length) {
+      lines.push('**해결한 문제**:');
+      for (const p of insights.problems_solved) {
+        lines.push(`- ✅ ${p}`);
+      }
+      lines.push('');
+    }
+    if (insights.key_decisions?.length) {
+      lines.push('**주요 결정**:');
+      for (const d of insights.key_decisions) {
+        lines.push(`- 🎯 ${d}`);
+      }
+      lines.push('');
+    }
+  }
+
+  // 요약 섹션
+  if (summary) {
+    lines.push('## 📋 요약');
+    lines.push('');
+    lines.push(summary);
+    lines.push('');
+  }
 
   if (sessionData.filesChanged.length > 0) {
     lines.push('## 변경된 파일');
@@ -3370,16 +3717,53 @@ function sessionToMarkdown(sessionData) {
   lines.push('## 대화 내용');
   lines.push('');
 
+  // 연속 도구 전용 메시지 그룹화
+  const grouped = [];
+  let toolGroup = null;
   for (const msg of sessionData.conversation || []) {
-    const time = msg.timestamp ?
-      new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const hasContent = msg.content && msg.content.trim();
+    const isToolOnly = msg.role === 'assistant' && !hasContent && msg.tools?.length > 0;
 
-    if (msg.role === 'user') {
+    if (isToolOnly) {
+      if (!toolGroup) toolGroup = { isToolGroup: true, count: 0, tools: [], timestamp: msg.timestamp };
+      toolGroup.count++;
+      for (const t of (msg.tools || [])) toolGroup.tools.push(t);
+    } else {
+      if (toolGroup) {
+        if (toolGroup.count >= 2 || toolGroup.tools.length >= 2) {
+          grouped.push(toolGroup);
+        } else {
+          // 단일 도구 메시지는 일반 메시지로 표시
+          grouped.push({ role: 'assistant', content: '', tools: toolGroup.tools, timestamp: toolGroup.timestamp });
+        }
+        toolGroup = null;
+      }
+      grouped.push(msg);
+    }
+  }
+  if (toolGroup) {
+    if (toolGroup.count >= 2 || toolGroup.tools.length >= 2) {
+      grouped.push(toolGroup);
+    } else {
+      grouped.push({ role: 'assistant', content: '', tools: toolGroup.tools, timestamp: toolGroup.timestamp });
+    }
+  }
+
+  for (const msg of grouped) {
+    if (msg.isToolGroup) {
+      const toolCounts = {};
+      for (const t of msg.tools) toolCounts[t] = (toolCounts[t] || 0) + 1;
+      const summary = Object.entries(toolCounts).map(([t, c]) => c > 1 ? `${t} ×${c}` : t).join(', ');
+      lines.push(`> 🔧 _${msg.tools.length}개 도구 호출: ${summary}_`);
+      lines.push('');
+    } else if (msg.role === 'user') {
+      const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
       lines.push(`### 👤 사용자 ${time ? `(${time})` : ''}`);
       lines.push('');
       lines.push(msg.content);
       lines.push('');
     } else {
+      const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '';
       lines.push(`### 🤖 Claude ${time ? `(${time})` : ''}`);
       lines.push('');
       if (msg.tools?.length > 0) {
@@ -3388,8 +3772,6 @@ function sessionToMarkdown(sessionData) {
       }
       if (msg.content) {
         lines.push(msg.content);
-      } else if (msg.tools?.length > 0) {
-        lines.push('_(도구 실행 중)_');
       }
       lines.push('');
     }
@@ -4179,7 +4561,16 @@ app.get('/api/sessions/:id/markdown', (req, res) => {
 
   try {
     const data = parseSessionFile(id, project, { maxMessages: 500 });
-    const markdown = sessionToMarkdown(data);
+
+    // 캐시된 요약/인사이트 로드
+    const summaries = loadSessionSummaries();
+    const summaryObj = summaries.find(s => s.sessionId === id);
+    const allInsights = loadSessionInsights();
+
+    const markdown = sessionToMarkdown(data, {
+      summary: summaryObj?.summary || null,
+      insights: allInsights[id] || null
+    });
 
     if (download === 'true') {
       const filename = `claude-session-${data.project}-${getKSTDateString()}.md`;
@@ -4198,22 +4589,26 @@ app.get('/api/sessions/:id/markdown', (req, res) => {
 app.post('/api/sessions/:id/export-obsidian', (req, res) => {
   const { id } = req.params;
   const { project } = req.query;
-  const { vaultPath } = req.body;
 
   if (!project) {
     return res.status(400).json({ error: 'project query parameter required' });
   }
 
-  // 기본 옵시디언 vault 경로 (jobs.json settings 또는 환경변수에서)
-  const jobsData = loadJobs();
-  const obsidianVault = vaultPath ||
-    jobsData.settings?.obsidianVault ||
-    process.env.OBSIDIAN_VAULT ||
-    path.join(os.homedir(), 'Documents', 'Obsidian');
+  const { vaultPath: obsidianVault } = getObsidianPaths();
 
   try {
     const data = parseSessionFile(id, project, { maxMessages: 500 });
-    const markdown = sessionToMarkdown(data);
+
+    // 캐시된 요약 로드
+    const summaries = loadSessionSummaries();
+    const summaryObj = summaries.find(s => s.sessionId === id);
+    const summaryText = summaryObj?.summary || null;
+
+    // 캐시된 인사이트 로드
+    const allInsights = loadSessionInsights();
+    const insights = allInsights[id] || null;
+
+    const markdown = sessionToMarkdown(data, { summary: summaryText, insights });
 
     // 저장 경로: vault/Claude Sessions/YYYY-MM/
     const date = new Date();
@@ -4229,12 +4624,14 @@ app.post('/api/sessions/:id/export-obsidian', (req, res) => {
     const filePath = path.join(sessionDir, filename);
 
     fs.writeFileSync(filePath, markdown, 'utf8');
-    console.log(`[Sessions] 옵시디언으로 내보냄: ${filePath}`);
+    console.log(`[Sessions] 옵시디언으로 내보냄: ${filePath} (요약: ${!!summaryText}, 인사이트: ${!!insights})`);
 
     res.json({
       success: true,
       path: filePath,
-      relativePath: `Claude Sessions/${yearMonth}/${filename}`
+      relativePath: `Claude Sessions/${yearMonth}/${filename}`,
+      hasSummary: !!summaryText,
+      hasInsights: !!insights
     });
   } catch (err) {
     console.error('[Sessions] 옵시디언 내보내기 실패:', err.message);
@@ -4399,10 +4796,7 @@ app.post('/api/sessions/daily-report/obsidian', async (req, res) => {
       return res.status(400).json({ error: '먼저 일일 보고서를 생성해주세요' });
     }
 
-    const jobsData = loadJobs();
-    const obsidianVault = jobsData.settings?.obsidianVault ||
-      process.env.OBSIDIAN_VAULT ||
-      path.join(os.homedir(), 'Documents', 'Obsidian');
+    const { vaultPath: obsidianVault } = getObsidianPaths();
 
     const reportDir = path.join(obsidianVault, 'Claude Sessions', 'Daily Reports');
     if (!fs.existsSync(reportDir)) {
@@ -4434,10 +4828,7 @@ app.post('/api/sessions/export-all', async (req, res) => {
     const sessions = findSessions(targetDate);
     let exported = 0;
 
-    const jobsData = loadJobs();
-    const obsidianVault = jobsData.settings?.obsidianVault ||
-      process.env.OBSIDIAN_VAULT ||
-      path.join(os.homedir(), 'Documents', 'Obsidian');
+    const { vaultPath: obsidianVault } = getObsidianPaths();
 
     const yearMonth = targetDate.substring(0, 7);
     const sessionDir = path.join(obsidianVault, 'Claude Sessions', yearMonth);
@@ -4446,10 +4837,17 @@ app.post('/api/sessions/export-all', async (req, res) => {
       fs.mkdirSync(sessionDir, { recursive: true });
     }
 
+    const summaries = loadSessionSummaries();
+    const allInsights = loadSessionInsights();
+
     for (const sess of sessions) {
       try {
         const data = parseSessionFile(sess.id, sess.projectPath, { maxMessages: 500 });
-        const markdown = sessionToMarkdown(data);
+        const summaryObj = summaries.find(s => s.sessionId === sess.id);
+        const markdown = sessionToMarkdown(data, {
+          summary: summaryObj?.summary || null,
+          insights: allInsights[sess.id] || null
+        });
 
         const filename = `${data.project}-${targetDate}-${sess.id.substring(0, 8)}.md`;
         const filePath = path.join(sessionDir, filename);
@@ -4844,6 +5242,538 @@ function saveWeeklyDigests(digests) {
   fs.writeFileSync(WEEKLY_DIGESTS_FILE, JSON.stringify(digests, null, 2));
 }
 
+// --- Memo Categories (Phase 4.1) ---
+const MEMO_CATEGORIES_FILE = path.join(__dirname, 'data', 'memo-categories.json');
+
+const CATEGORY_DEFINITIONS = {
+  work: { icon: '💼', keywords: ['pr', 'pr리뷰', '배포', 'deploy', '회의', 'meeting', 'review', '리뷰', '머지', 'merge', '코드리뷰', 'jira', '티켓', 'hotfix', 'release', '릴리즈', '장애', '모니터링', '운영', '인프라'] },
+  learning: { icon: '📚', keywords: ['학습', '공부', '정리', 'study', 'learn', '이해', '확인중', '알아보기', 'til', '개념', '원리', '동작방식', '아키텍처', '패턴', '블로그', '강의', '튜토리얼', '읽기', '참고'] },
+  idea: { icon: '💡', keywords: ['아이디어', 'idea', '제안', '추가하면', '개선', 'suggest', '하면 좋겠다', '해보자', '시도', '구상', '기획'] },
+  todo: { icon: '✅', keywords: ['해야', 'todo', '할일', '작업', 'task', '필요', '처리', '예정', '내일', '오늘', '이번주'] },
+  issue: { icon: '🐛', keywords: ['이슈', 'issue', '버그', 'bug', '문제', '오류', 'error', 'fail', '실패', 'oom', 'crash', '에러', 'fix', '수정필요'] },
+  personal: { icon: '🏠', keywords: ['점심', '저녁', '휴가', 'lunch', 'dinner', 'personal', '약속', '운동', '병원', '맛집'] }
+};
+
+function loadMemoCategories() {
+  try {
+    if (fs.existsSync(MEMO_CATEGORIES_FILE)) {
+      return JSON.parse(fs.readFileSync(MEMO_CATEGORIES_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  return {};
+}
+
+function saveMemoCategories(categories) {
+  const dir = path.dirname(MEMO_CATEGORIES_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(MEMO_CATEGORIES_FILE, JSON.stringify(categories, null, 2));
+}
+
+// Tier 1: 키워드 매칭 즉시 분류
+function classifyMemoByKeywords(content) {
+  const lower = content.toLowerCase();
+  const matches = {};
+
+  for (const [cat, def] of Object.entries(CATEGORY_DEFINITIONS)) {
+    const matchedKw = def.keywords.filter(kw => lower.includes(kw));
+    if (matchedKw.length > 0) matches[cat] = { score: matchedKw.length, keywords: matchedKw };
+  }
+
+  if (Object.keys(matches).length === 0) return null;
+
+  const sorted = Object.entries(matches).sort((a, b) => b[1].score - a[1].score);
+  const category = sorted[0][0];
+  const tags = sorted[0][1].keywords.slice(0, 3);
+
+  return { category, tags, confidence: 'keyword' };
+}
+
+// Tier 2: Claude CLI 백그라운드 분류
+async function classifyMemoWithClaude(content) {
+  const claudePath = process.env.CLAUDE_CLI_PATH ||
+    path.join(os.homedir(), '.local', 'bin', 'claude');
+
+  if (!fs.existsSync(claudePath)) return null;
+
+  const prompt = `다음 메모를 분류하세요.
+
+메모: "${content}"
+
+카테고리 (하나만 선택):
+- work: 업무 (PR, 배포, 회의, 코드리뷰)
+- learning: 학습/기술 (개념 정리, 새로운 기술)
+- idea: 아이디어/제안
+- todo: 할일/작업 항목
+- issue: 이슈/버그/문제
+- personal: 개인/일상
+
+JSON만 응답: {"category": "learning", "tags": ["aws", "ecs"]}
+태그는 핵심 키워드 1-3개만.`;
+
+  return new Promise((resolve) => {
+    const claude = spawn(claudePath, ['-p', prompt], {
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    const timeout = setTimeout(() => { claude.kill('SIGTERM'); resolve(null); }, 20000);
+
+    claude.stdout.on('data', d => { stdout += d.toString(); });
+    claude.on('close', (code) => {
+      clearTimeout(timeout);
+      if (code !== 0 || !stdout.trim()) return resolve(null);
+      try {
+        let jsonStr = stdout.trim();
+        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) jsonStr = jsonMatch[0];
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.category && CATEGORY_DEFINITIONS[parsed.category]) {
+          resolve({ category: parsed.category, tags: (parsed.tags || []).slice(0, 3), confidence: 'claude' });
+        } else {
+          resolve(null);
+        }
+      } catch { resolve(null); }
+    });
+    claude.on('error', () => { clearTimeout(timeout); resolve(null); });
+  });
+}
+
+// 비동기 메모 분류 (저장 후 백그라운드)
+async function classifyMemoBackground(memoId, content) {
+  // Tier 1: 키워드 매칭
+  let result = classifyMemoByKeywords(content);
+
+  // Tier 2: 키워드 매칭 실패 시 Claude
+  if (!result) {
+    result = await classifyMemoWithClaude(content);
+  }
+
+  if (result) {
+    const categories = loadMemoCategories();
+    categories[memoId] = {
+      ...result,
+      autoTags: true,
+      classifiedAt: new Date().toISOString()
+    };
+    saveMemoCategories(categories);
+
+    // SSE 브로드캐스트
+    sendSSEEvent(null, 'memo:classified', { memoId, ...result });
+    console.log(`[MemoCategory] ${memoId} → ${result.category} (${result.confidence})`);
+  }
+}
+
+// --- Session Insights (Phase 4.2) ---
+const SESSION_INSIGHTS_FILE = path.join(__dirname, 'data', 'session-insights.json');
+
+function loadSessionInsights() {
+  try {
+    if (fs.existsSync(SESSION_INSIGHTS_FILE)) {
+      return JSON.parse(fs.readFileSync(SESSION_INSIGHTS_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  return {};
+}
+
+function saveSessionInsights(insights) {
+  const dir = path.dirname(SESSION_INSIGHTS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(SESSION_INSIGHTS_FILE, JSON.stringify(insights, null, 2));
+}
+
+// 세션 인사이트 생성 태스크
+async function processSessionInsightsTask(task) {
+  const { sessionId, projectPath } = task.payload;
+
+  updateTaskProgress(task, 10, '세션 데이터 로드 중...');
+
+  const sessionData = parseSessionFile(sessionId, projectPath, { maxMessages: 100 });
+
+  const userMessages = sessionData.conversation
+    .filter(c => c.role === 'user' && c.content)
+    .slice(0, 20)
+    .map(c => c.content.substring(0, 500));
+
+  const assistantSummary = sessionData.conversation
+    .filter(c => c.role === 'assistant' && c.content)
+    .slice(0, 10)
+    .map(c => c.content.substring(0, 300));
+
+  updateTaskProgress(task, 30, 'Claude 분석 요청 중...');
+
+  const claudePath = process.env.CLAUDE_CLI_PATH ||
+    path.join(os.homedir(), '.local', 'bin', 'claude');
+
+  if (!fs.existsSync(claudePath)) {
+    throw new Error(`Claude CLI를 찾을 수 없습니다: ${claudePath}`);
+  }
+
+  const prompt = `다음 Claude Code 세션을 분석하여 인사이트를 추출하세요.
+
+프로젝트: ${sessionData.project}
+메시지 수: ${sessionData.messageCount}
+사용 도구: ${[...sessionData.toolsUsed].slice(0, 10).join(', ')}
+변경 파일: ${[...sessionData.filesChanged].slice(0, 15).join(', ')}
+
+사용자 요청:
+${userMessages.join('\n---\n')}
+
+Assistant 응답 (요약):
+${assistantSummary.slice(0, 5).join('\n---\n')}
+
+JSON 형식으로만 응답하세요:
+{
+  "topics": ["주제1", "주제2"],
+  "technologies": ["기술1", "기술2"],
+  "problems_solved": ["해결한 문제"],
+  "key_decisions": ["주요 결정"],
+  "complexity": "low|medium|high",
+  "summary": "한 줄 요약 (50자 이내)"
+}
+
+규칙:
+- topics: 다룬 주제 3-5개
+- technologies: 사용/언급된 기술 2-5개
+- problems_solved: 해결한 문제 1-3개
+- key_decisions: 주요 결정 1-2개
+- complexity: 세션 복잡도
+- 한국어 세션이면 한국어로 응답`;
+
+  task.command = `${claudePath} -p "..."`;
+  task.logs.push({ type: 'cmd', time: new Date().toISOString(), text: 'Claude 인사이트 분석 실행' });
+
+  updateTaskProgress(task, 40, 'Claude CLI 실행 중...');
+
+  const insights = await new Promise((resolve, reject) => {
+    const claude = spawn(claudePath, ['-p', prompt], {
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    runningTaskProcesses.set(task.id, claude);
+    let stdout = '';
+    let stderr = '';
+
+    claude.stdout.on('data', (data) => {
+      stdout += data.toString();
+      task.stdout = stdout;
+      updateTaskProgress(task, 60, 'Claude 응답 수신 중...');
+    });
+
+    claude.stderr.on('data', (data) => {
+      stderr += data.toString();
+      task.stderr = stderr;
+    });
+
+    const timeoutId = setTimeout(() => {
+      claude.kill('SIGTERM');
+      reject(new Error('타임아웃 (4분)'));
+    }, 240000);
+
+    claude.on('close', (code) => {
+      clearTimeout(timeoutId);
+      runningTaskProcesses.delete(task.id);
+      if (code === 0 && stdout.trim()) {
+        try {
+          let jsonStr = stdout.trim();
+          const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+          if (jsonMatch) jsonStr = jsonMatch[0];
+          resolve(JSON.parse(jsonStr));
+        } catch (err) {
+          reject(new Error(`JSON 파싱 실패: ${err.message}`));
+        }
+      } else {
+        reject(new Error(`Claude 실행 실패 (exit ${code}): ${stderr || 'No output'}`));
+      }
+    });
+
+    claude.on('error', (err) => {
+      clearTimeout(timeoutId);
+      runningTaskProcesses.delete(task.id);
+      reject(err);
+    });
+  });
+
+  updateTaskProgress(task, 85, '인사이트 저장 중...');
+
+  const allInsights = loadSessionInsights();
+  allInsights[sessionId] = {
+    ...insights,
+    files_modified: [...sessionData.filesChanged].slice(0, 15),
+    createdAt: new Date().toISOString()
+  };
+  saveSessionInsights(allInsights);
+
+  // 지식 그래프에 반영
+  try { rebuildKnowledgeGraph(); } catch (e) { /* 그래프 재구성 실패 무시 */ }
+
+  updateTaskProgress(task, 100, '완료');
+  return { sessionId, project: sessionData.project, insights: allInsights[sessionId] };
+}
+
+// --- Knowledge Graph (Phase 4.3) ---
+const KNOWLEDGE_GRAPH_FILE = path.join(__dirname, 'data', 'knowledge-graph.json');
+
+function loadKnowledgeGraphData() {
+  try {
+    if (fs.existsSync(KNOWLEDGE_GRAPH_FILE)) {
+      return JSON.parse(fs.readFileSync(KNOWLEDGE_GRAPH_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  return { nodes: [], edges: [], metadata: { lastUpdated: null, totalNodes: 0, totalEdges: 0 } };
+}
+
+function saveKnowledgeGraph(graph) {
+  const dir = path.dirname(KNOWLEDGE_GRAPH_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  graph.metadata = {
+    lastUpdated: new Date().toISOString(),
+    totalNodes: graph.nodes.length,
+    totalEdges: graph.edges.length
+  };
+  fs.writeFileSync(KNOWLEDGE_GRAPH_FILE, JSON.stringify(graph, null, 2));
+}
+
+function rebuildKnowledgeGraph() {
+  const allInsights = loadSessionInsights();
+  const memoCategories = loadMemoCategories();
+  const memos = loadQuickMemos();
+
+  const nodeMap = new Map();
+  const edgeMap = new Map();
+
+  // 세션 인사이트에서 토픽 추출
+  for (const [sessionId, insight] of Object.entries(allInsights)) {
+    const allKeywords = [...(insight.topics || []), ...(insight.technologies || [])];
+
+    for (const keyword of allKeywords) {
+      const nodeId = `topic-${keyword.toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-')}`;
+
+      if (!nodeMap.has(nodeId)) {
+        nodeMap.set(nodeId, {
+          id: nodeId, label: keyword, category: 'general',
+          mentions: 0, lastSeen: getKSTDateString(),
+          sources: { sessions: [], memos: [] }
+        });
+      }
+
+      const node = nodeMap.get(nodeId);
+      node.mentions++;
+      if (!node.sources.sessions.includes(sessionId)) {
+        node.sources.sessions.push(sessionId);
+      }
+      const insightDate = insight.createdAt?.split('T')[0];
+      if (insightDate && insightDate > node.lastSeen) node.lastSeen = insightDate;
+    }
+
+    // 엣지: 동일 세션에서 동시 언급
+    for (let i = 0; i < allKeywords.length; i++) {
+      for (let j = i + 1; j < allKeywords.length; j++) {
+        const idA = `topic-${allKeywords[i].toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-')}`;
+        const idB = `topic-${allKeywords[j].toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-')}`;
+        const edgeKey = idA < idB ? `${idA}:${idB}` : `${idB}:${idA}`;
+
+        if (!edgeMap.has(edgeKey)) {
+          edgeMap.set(edgeKey, {
+            from: idA < idB ? idA : idB,
+            to: idA < idB ? idB : idA,
+            strength: 0, context: `${allKeywords[i]}와 ${allKeywords[j]}`,
+            cooccurrences: []
+          });
+        }
+
+        const edge = edgeMap.get(edgeKey);
+        edge.strength++;
+        if (!edge.cooccurrences.includes(sessionId)) edge.cooccurrences.push(sessionId);
+      }
+    }
+  }
+
+  // 메모 태그에서 토픽 추출
+  for (const memo of memos) {
+    const cat = memoCategories[memo.id];
+    if (!cat || !cat.tags || cat.tags.length === 0) continue;
+
+    for (const tag of cat.tags) {
+      const nodeId = `topic-${tag.toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-')}`;
+
+      if (!nodeMap.has(nodeId)) {
+        nodeMap.set(nodeId, {
+          id: nodeId, label: tag, category: cat.category || 'general',
+          mentions: 0, lastSeen: getKSTDateString(),
+          sources: { sessions: [], memos: [] }
+        });
+      }
+
+      const node = nodeMap.get(nodeId);
+      node.mentions++;
+      if (!node.sources.memos.includes(memo.id)) node.sources.memos.push(memo.id);
+      const memoDate = memo.timestamp?.split('T')[0];
+      if (memoDate && memoDate > node.lastSeen) node.lastSeen = memoDate;
+    }
+  }
+
+  const graph = {
+    nodes: Array.from(nodeMap.values()),
+    edges: Array.from(edgeMap.values())
+  };
+
+  saveKnowledgeGraph(graph);
+  console.log(`[KnowledgeGraph] 재구성 완료: ${graph.nodes.length}개 노드, ${graph.edges.length}개 엣지`);
+  return graph;
+}
+
+// --- Review Analysis (Phase 4.4) ---
+const REVIEW_ANALYSIS_FILE = path.join(__dirname, 'data', 'review-analysis.json');
+
+function loadReviewAnalysis() {
+  try {
+    if (fs.existsSync(REVIEW_ANALYSIS_FILE)) {
+      return JSON.parse(fs.readFileSync(REVIEW_ANALYSIS_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  return [];
+}
+
+function saveReviewAnalysis(data) {
+  const dir = path.dirname(REVIEW_ANALYSIS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(REVIEW_ANALYSIS_FILE, JSON.stringify(data, null, 2));
+}
+
+async function processReviewAnalysisTask(task) {
+  const { days = 30 } = task.payload;
+
+  updateTaskProgress(task, 10, 'GitHub 리뷰 데이터 수집 중...');
+
+  // GitHub 활동에서 리뷰 관련 이벤트 수집
+  const allActivity = [];
+  const dateSet = new Set();
+  for (let i = 0; i < days; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    dateSet.add(getKSTDateString(d));
+  }
+
+  try {
+    const accounts = await getGhAccounts();
+    for (const acc of accounts) {
+      const username = acc.username;
+      const eventsUrl = `/users/${username}/events?per_page=100`;
+      const result = JSON.parse(await new Promise((resolve, reject) => {
+        const gh = spawn('gh', ['api', eventsUrl], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let out = '';
+        gh.stdout.on('data', d => { out += d.toString(); });
+        gh.on('close', code => code === 0 ? resolve(out) : reject(new Error(`gh failed: ${code}`)));
+        gh.on('error', reject);
+      }));
+
+      const reviews = result.filter(e =>
+        e.type === 'PullRequestReviewEvent' || e.type === 'PullRequestReviewCommentEvent'
+      ).map(e => ({
+        repo: e.repo?.name,
+        prNumber: e.payload?.pull_request?.number,
+        prTitle: e.payload?.pull_request?.title || '(제목 없음)',
+        action: e.payload?.action,
+        state: e.payload?.review?.state,
+        body: e.payload?.review?.body || e.payload?.comment?.body || '',
+        createdAt: e.created_at,
+        account: username
+      }));
+
+      allActivity.push(...reviews);
+    }
+  } catch (err) {
+    console.error('[ReviewAnalysis] GitHub 데이터 수집 오류:', err.message);
+  }
+
+  if (allActivity.length === 0) {
+    return { period: `${days} days`, reviewCount: 0, analysis: { common_patterns: [], review_style: '데이터 부족', suggestions: [], checklist: [] } };
+  }
+
+  updateTaskProgress(task, 40, `${allActivity.length}개 리뷰 분석 중...`);
+
+  const claudePath = process.env.CLAUDE_CLI_PATH ||
+    path.join(os.homedir(), '.local', 'bin', 'claude');
+
+  if (!fs.existsSync(claudePath)) {
+    throw new Error('Claude CLI를 찾을 수 없습니다');
+  }
+
+  const reviewSummaries = allActivity.slice(0, 30).map(r => ({
+    repo: r.repo, pr: r.prTitle, state: r.state,
+    comment: (r.body || '').substring(0, 200), date: r.createdAt?.split('T')[0]
+  }));
+
+  const prompt = `다음은 ${days}일간의 코드 리뷰 활동입니다.
+
+${JSON.stringify(reviewSummaries, null, 2)}
+
+JSON만 응답:
+{
+  "common_patterns": ["자주 지적하는 패턴 (상위 3개)"],
+  "review_style": "리뷰 스타일 한 문장 설명",
+  "suggestions": ["개선 제안 2-3개"],
+  "checklist": [
+    {"item": "체크리스트 항목", "category": "security|performance|style|testing"}
+  ],
+  "summary": "전체 리뷰 활동 요약 (2-3문장)"
+}`;
+
+  const analysis = await new Promise((resolve, reject) => {
+    const claude = spawn(claudePath, ['-p', prompt], {
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    runningTaskProcesses.set(task.id, claude);
+    let stdout = '';
+
+    claude.stdout.on('data', d => {
+      stdout += d.toString();
+      task.stdout = stdout;
+      updateTaskProgress(task, 70, 'Claude 응답 수신 중...');
+    });
+
+    const timeoutId = setTimeout(() => { claude.kill('SIGTERM'); reject(new Error('타임아웃')); }, 240000);
+
+    claude.on('close', code => {
+      clearTimeout(timeoutId);
+      runningTaskProcesses.delete(task.id);
+      if (code === 0 && stdout.trim()) {
+        try {
+          let jsonStr = stdout.trim();
+          const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+          if (jsonMatch) jsonStr = jsonMatch[0];
+          resolve(JSON.parse(jsonStr));
+        } catch (err) { reject(new Error(`JSON 파싱 실패: ${err.message}`)); }
+      } else { reject(new Error(`Claude 실행 실패 (exit ${code})`)); }
+    });
+
+    claude.on('error', err => { clearTimeout(timeoutId); runningTaskProcesses.delete(task.id); reject(err); });
+  });
+
+  updateTaskProgress(task, 90, '결과 저장 중...');
+
+  const result = {
+    id: `ra-${getKSTDateString()}`,
+    period: `${days} days`,
+    reviewCount: allActivity.length,
+    analysis,
+    createdAt: new Date().toISOString()
+  };
+
+  const allAnalysis = loadReviewAnalysis();
+  const existIdx = allAnalysis.findIndex(a => a.id === result.id);
+  if (existIdx >= 0) allAnalysis[existIdx] = result;
+  else allAnalysis.push(result);
+  saveReviewAnalysis(allAnalysis);
+
+  updateTaskProgress(task, 100, '완료');
+  return result;
+}
+
 // --- Session Summaries ---
 const SESSION_SUMMARIES_FILE = path.join(__dirname, 'data', 'session-summaries.json');
 
@@ -4895,6 +5825,229 @@ function getDateRange(start, end) {
   }
   return dates;
 }
+
+// ============ Phase 4 API Endpoints ============
+
+// PATCH /api/quick-memos/:id/category - 수동 카테고리/태그 수정
+app.patch('/api/quick-memos/:id/category', (req, res) => {
+  const { id } = req.params;
+  const { category, tags } = req.body;
+
+  if (category && !CATEGORY_DEFINITIONS[category]) {
+    return res.status(400).json({ error: `Invalid category: ${category}` });
+  }
+
+  const categories = loadMemoCategories();
+  categories[id] = {
+    category: category || categories[id]?.category || null,
+    tags: tags || categories[id]?.tags || [],
+    autoTags: false,
+    classifiedAt: new Date().toISOString()
+  };
+  saveMemoCategories(categories);
+
+  res.json({ success: true, classification: categories[id] });
+});
+
+// POST /api/memos/migrate-classifications - 기존 메모 일괄 키워드 분류
+app.post('/api/memos/migrate-classifications', (req, res) => {
+  const memos = loadQuickMemos();
+  const categories = loadMemoCategories();
+  let classified = 0;
+
+  for (const memo of memos) {
+    if (!categories[memo.id]) {
+      const result = classifyMemoByKeywords(memo.content);
+      if (result) {
+        categories[memo.id] = { ...result, autoTags: true, classifiedAt: new Date().toISOString() };
+        classified++;
+      }
+    }
+  }
+
+  saveMemoCategories(categories);
+  console.log(`[MemoCategory] 마이그레이션 완료: ${classified}/${memos.length}`);
+  res.json({ success: true, classified, total: memos.length });
+});
+
+// GET /api/memos/stats - 카테고리별 통계
+app.get('/api/memos/stats', (req, res) => {
+  const memos = loadQuickMemos();
+  const categories = loadMemoCategories();
+
+  const stats = {};
+  for (const cat of Object.keys(CATEGORY_DEFINITIONS)) stats[cat] = 0;
+  stats.uncategorized = 0;
+
+  memos.forEach(m => {
+    const cat = categories[m.id]?.category;
+    if (cat && stats[cat] !== undefined) stats[cat]++;
+    else stats.uncategorized++;
+  });
+
+  res.json({ stats, total: memos.length, definitions: CATEGORY_DEFINITIONS });
+});
+
+// GET /api/sessions/:id/insights - 세션 인사이트 조회
+app.get('/api/sessions/:id/insights', (req, res) => {
+  const { id } = req.params;
+  const { project } = req.query;
+
+  const allInsights = loadSessionInsights();
+
+  if (allInsights[id]) {
+    return res.json({ insights: allInsights[id], cached: true });
+  }
+
+  if (!project) {
+    return res.status(400).json({ error: 'project query parameter required for generation' });
+  }
+
+  // 태스크 생성
+  const task = {
+    id: generateTaskId(),
+    type: 'session-insights',
+    payload: { sessionId: id, projectPath: project },
+    status: 'pending', progress: 0, progressMessage: '대기 중...',
+    result: null, error: null, stdout: '', stderr: '',
+    logs: [], command: null,
+    createdAt: new Date().toISOString(),
+    startedAt: null, completedAt: null, clientId: null
+  };
+
+  taskQueue.set(task.id, task);
+  processTask(task);
+
+  res.json({ taskId: task.id, status: 'generating' });
+});
+
+// GET /api/sessions/insights/overview - 인사이트 통계 요약
+app.get('/api/sessions/insights/overview', (req, res) => {
+  const days = parseInt(req.query.days || '7');
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  const cutoff = cutoffDate.toISOString();
+
+  const allInsights = loadSessionInsights();
+  const recentInsights = Object.entries(allInsights)
+    .filter(([_, ins]) => ins.createdAt >= cutoff)
+    .map(([sessionId, ins]) => ({ sessionId, ...ins }));
+
+  const topicCount = {};
+  const techCount = {};
+  const complexity = { low: 0, medium: 0, high: 0 };
+
+  recentInsights.forEach(ins => {
+    (ins.topics || []).forEach(t => { topicCount[t] = (topicCount[t] || 0) + 1; });
+    (ins.technologies || []).forEach(t => { techCount[t] = (techCount[t] || 0) + 1; });
+    if (ins.complexity) complexity[ins.complexity]++;
+  });
+
+  const topTopics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([topic, count]) => ({ topic, count }));
+  const topTech = Object.entries(techCount).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([tech, count]) => ({ tech, count }));
+
+  res.json({ period: `${days} days`, sessionsAnalyzed: recentInsights.length, topTopics, topTechnologies: topTech, complexityDistribution: complexity });
+});
+
+// GET /api/knowledge-graph - 지식 그래프 데이터
+app.get('/api/knowledge-graph', (req, res) => {
+  let graph = loadKnowledgeGraphData();
+  const minMentions = parseInt(req.query.minMentions || '1');
+
+  if (req.query.rebuild === 'true') {
+    graph = rebuildKnowledgeGraph();
+  }
+
+  if (minMentions > 1) {
+    const nodeIds = new Set(graph.nodes.filter(n => n.mentions >= minMentions).map(n => n.id));
+    graph = {
+      ...graph,
+      nodes: graph.nodes.filter(n => nodeIds.has(n.id)),
+      edges: graph.edges.filter(e => nodeIds.has(e.from) && nodeIds.has(e.to))
+    };
+  }
+
+  res.json(graph);
+});
+
+// POST /api/knowledge-graph/rebuild - 지식 그래프 재구성
+app.post('/api/knowledge-graph/rebuild', (req, res) => {
+  try {
+    const graph = rebuildKnowledgeGraph();
+    res.json({ success: true, nodes: graph.nodes.length, edges: graph.edges.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/knowledge-graph/recommendations - 토픽 추천
+app.get('/api/knowledge-graph/recommendations', (req, res) => {
+  const { topic } = req.query;
+  if (!topic) return res.status(400).json({ error: 'topic parameter required' });
+
+  const graph = loadKnowledgeGraphData();
+  const topicId = `topic-${topic.toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-')}`;
+
+  const relatedEdges = graph.edges
+    .filter(e => e.from === topicId || e.to === topicId)
+    .sort((a, b) => b.strength - a.strength);
+
+  const related = relatedEdges.slice(0, 5).map(e => {
+    const otherId = e.from === topicId ? e.to : e.from;
+    const node = graph.nodes.find(n => n.id === otherId);
+    return { topic: node?.label || otherId, reason: `${e.strength}회 함께 언급됨`, strength: e.strength };
+  });
+
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - 60);
+  const cutoff = getKSTDateString(cutoffDate);
+
+  const reviewNeeded = graph.nodes
+    .filter(n => n.lastSeen < cutoff && n.mentions >= 3)
+    .sort((a, b) => a.lastSeen.localeCompare(b.lastSeen))
+    .slice(0, 3)
+    .map(n => ({ topic: n.label, lastSeen: n.lastSeen, reason: `${n.mentions}회 학습, 복습 추천` }));
+
+  res.json({ related, review_needed: reviewNeeded });
+});
+
+// POST /api/github/review-analysis - 리뷰 패턴 분석 (비동기)
+app.post('/api/github/review-analysis', (req, res) => {
+  const { days = 30, clientId } = req.body || {};
+
+  // 캐시 확인
+  const cached = loadReviewAnalysis();
+  const today = getKSTDateString();
+  const existing = cached.find(a => a.id === `ra-${today}`);
+  if (existing) {
+    return res.json({ cached: true, ...existing });
+  }
+
+  const task = {
+    id: generateTaskId(),
+    type: 'review-analysis',
+    payload: { days: parseInt(days) },
+    status: 'pending', progress: 0, progressMessage: '대기 중...',
+    result: null, error: null, stdout: '', stderr: '',
+    logs: [], command: null,
+    createdAt: new Date().toISOString(),
+    startedAt: null, completedAt: null, clientId
+  };
+
+  taskQueue.set(task.id, task);
+  processTask(task);
+
+  res.json({ taskId: task.id, status: 'generating' });
+});
+
+// GET /api/github/review-analysis - 저장된 리뷰 분석 조회
+app.get('/api/github/review-analysis', (req, res) => {
+  const analyses = loadReviewAnalysis();
+  if (analyses.length === 0) return res.json({ analysis: null });
+  res.json({ analysis: analyses[analyses.length - 1] });
+});
 
 // POST /api/insights/weekly-digest - 주간 다이제스트 생성 (비동기 태스크)
 app.post('/api/insights/weekly-digest', (req, res) => {
