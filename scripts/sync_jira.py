@@ -341,13 +341,30 @@ import urllib.parse
 
 
 def main():
-    # 날짜 파라미터 처리
-    if "--today" in sys.argv:
-        target_date = datetime.now().strftime("%Y-%m-%d")
-    elif len(sys.argv) > 1 and sys.argv[1] != "--today":
-        target_date = sys.argv[1]
-    else:
-        # 기본값: 어제
+    # 옵션 파싱
+    yes_mode = "--yes" in sys.argv or "-y" in sys.argv
+    args = [a for a in sys.argv[1:] if a not in ("--yes", "-y")]
+
+    target_date = None
+    override_project = None
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--today":
+            target_date = datetime.now().strftime("%Y-%m-%d")
+            i += 1
+        elif arg == "--project" and i + 1 < len(args):
+            override_project = args[i + 1].strip()
+            i += 2
+        elif not arg.startswith("-"):
+            target_date = arg
+            i += 1
+        else:
+            i += 1
+
+    # 기본값: 어제
+    if not target_date:
         target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -357,11 +374,11 @@ def main():
     # JIRA 설정 및 인증
     jira_config = get_jira_config()
     server, email, token = get_jira_credentials()
-    project = jira_config.get("project", "")
+    project = override_project or jira_config.get("project", "")
 
     if not project:
         print("❌ JIRA 프로젝트가 설정되지 않았습니다.")
-        print("   config/settings.local.yaml의 sync.jira.project를 설정하세요.")
+        print("   --project 옵션 또는 config/settings.local.yaml의 sync.jira.project를 설정하세요.")
         sys.exit(1)
 
     print(f"   Server: {server}")
@@ -392,10 +409,13 @@ def main():
     print("━" * 40)
 
     # Daily Note 업데이트
-    try:
-        choice = input("\nDaily Note에 추가할까요? [Y/n]: ").strip().lower()
-    except EOFError:
+    if yes_mode:
         choice = "y"
+    else:
+        try:
+            choice = input("\nDaily Note에 추가할까요? [Y/n]: ").strip().lower()
+        except EOFError:
+            choice = "y"
 
     if choice in ["", "y", "yes"]:
         result_path = update_daily_note(target_date, jira_section)

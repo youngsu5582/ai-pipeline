@@ -210,13 +210,16 @@ def get_daily_config() -> dict:
     })
 
 
-def init_daily_note(target_date: str) -> str:
+def init_daily_note(target_date: str, yes_mode: bool = False) -> str:
     """아침 템플릿 생성 (어제 링크 + 미완료 이월)"""
     daily_path = get_daily_note_path(target_date)
     weekday = get_weekday_korean(target_date)
 
     if daily_path.exists():
         print(f"⚠️  {target_date} Daily Note가 이미 존재합니다.")
+        if yes_mode:
+            print("   --yes 모드: 덮어쓰기 건너뜀")
+            return str(daily_path)
         try:
             choice = input("덮어쓸까요? [y/N]: ").strip().lower()
         except EOFError:
@@ -291,9 +294,10 @@ weekday: {weekday}요일
 
 
 def main():
-    # --init 옵션 처리
+    # 옵션 파싱
     init_mode = "--init" in sys.argv
-    args = [a for a in sys.argv[1:] if a != "--init"]
+    yes_mode = "--yes" in sys.argv or "-y" in sys.argv
+    args = [a for a in sys.argv[1:] if a not in ("--init", "--yes", "-y")]
 
     # 날짜 파라미터 처리
     if args:
@@ -307,7 +311,7 @@ def main():
 
     # --init 모드: 아침 템플릿 생성
     if init_mode:
-        result_path = init_daily_note(target_date)
+        result_path = init_daily_note(target_date, yes_mode=yes_mode)
         print(f"\n✅ Daily Note 템플릿 생성 완료!")
         print(f"   {result_path}")
         return
@@ -329,10 +333,13 @@ def main():
     daily_path = get_daily_note_path(target_date)
     exists = "업데이트" if daily_path.exists() else "생성"
 
-    try:
-        choice = input(f"\nDaily Note ({daily_path.name}) {exists}할까요? [Y/n]: ").strip().lower()
-    except EOFError:
+    if yes_mode:
         choice = 'y'
+    else:
+        try:
+            choice = input(f"\nDaily Note ({daily_path.name}) {exists}할까요? [Y/n]: ").strip().lower()
+        except EOFError:
+            choice = 'y'
 
     if choice in ['', 'y', 'yes']:
         result_path = update_daily_note(target_date, drafts)

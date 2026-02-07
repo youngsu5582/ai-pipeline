@@ -439,9 +439,76 @@ def build_monthly_md(year_month: str, analysis: dict) -> str:
     return "\n".join(lines)
 
 
+def send_slack_notification(year_month: str, stats: dict) -> bool:
+    """Slack으로 알림 전송"""
+    import urllib.request
+    import urllib.error
+
+    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    if not webhook_url:
+        print("⚠️  SLACK_WEBHOOK_URL 환경변수가 설정되지 않았습니다.")
+        return False
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"📆 {year_month} 월간 리포트 생성 완료",
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"• 주간 회고: {stats.get('weekly_reviews', 0)}개\n"
+                    f"• Daily Notes: {stats.get('daily_notes', 0)}개\n"
+                    f"• GitHub 활동일: {stats.get('github_activities', 0)}일"
+                )
+            }
+        },
+    ]
+
+    payload = {"blocks": blocks}
+
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            webhook_url,
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status == 200
+    except Exception as e:
+        print(f"⚠️  Slack 알림 전송 실패: {e}")
+        return False
+
+
 def main():
-    # 월 파라미터 처리
-    month_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    # 옵션 파싱
+    month_arg = None
+    yes_mode = False
+    slack_mode = False
+
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("--yes", "-y"):
+            yes_mode = True
+            i += 1
+        elif arg == "--slack":
+            slack_mode = True
+            i += 1
+        elif not arg.startswith("-"):
+            month_arg = arg
+            i += 1
+        else:
+            i += 1
+
     year, month = parse_month(month_arg)
     year_month = f"{year}-{month:02d}"
 
@@ -494,10 +561,13 @@ def main():
     daily_folder = CONFIG["vault"].get("daily_folder", "DAILY")
     monthly_path = vault_path / daily_folder / f"{year_month}-월간리포트.md"
 
-    try:
-        choice = input("\n저장할까요? [Y/n]: ").strip().lower()
-    except EOFError:
+    if yes_mode:
         choice = "y"
+    else:
+        try:
+            choice = input("\n저장할까요? [Y/n]: ").strip().lower()
+        except EOFError:
+            choice = "y"
 
     if choice in ["", "y", "yes"]:
         monthly_path.parent.mkdir(parents=True, exist_ok=True)
@@ -505,6 +575,19 @@ def main():
             f.write(monthly_md)
         print(f"\n✅ 저장 완료!")
         print(f"   {monthly_path}")
+
+        # Slack 알림
+        if slack_mode:
+            print("\n📤 Slack 알림 전송 중...")
+            stats = {
+                "weekly_reviews": len(weekly_reviews),
+                "daily_notes": len(daily_notes),
+                "github_activities": len(github_activities),
+            }
+            if send_slack_notification(year_month, stats):
+                print("✅ Slack 알림 전송 완료!")
+            else:
+                print("❌ Slack 알림 전송 실패")
     else:
         print("\n⏭️  건너뛰었습니다.")
 

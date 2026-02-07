@@ -504,16 +504,78 @@ def confirm_and_save(
         print("  [Y] 저장 | [n] 건너뛰기 | [edit] 수정")
 
 
+def send_slack_notification(week_id: str, stats: dict) -> bool:
+    """Slack으로 알림 전송"""
+    import urllib.request
+    import urllib.error
+
+    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    if not webhook_url:
+        print("⚠️  SLACK_WEBHOOK_URL 환경변수가 설정되지 않았습니다.")
+        return False
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"📅 {week_id} 주간 회고 생성 완료",
+                "emoji": True
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"• Draft Notes: {stats.get('draft_notes', 0)}개\n"
+                    f"• Daily Notes: {stats.get('daily_notes', 0)}개\n"
+                    f"• Quick Notes: {stats.get('quick_notes', 0)}개"
+                )
+            }
+        },
+    ]
+
+    payload = {"blocks": blocks}
+
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            webhook_url,
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status == 200
+    except Exception as e:
+        print(f"⚠️  Slack 알림 전송 실패: {e}")
+        return False
+
+
 def main() -> None:
+    # 옵션 파싱
     date_arg = None
-    if "--date" in sys.argv:
-        idx = sys.argv.index("--date")
-        if idx + 1 >= len(sys.argv):
-            print("--date 옵션에는 날짜가 필요합니다. 예: --date 2026-01-15")
-            sys.exit(1)
-        date_arg = sys.argv[idx + 1]
-    elif len(sys.argv) > 1:
-        date_arg = sys.argv[1]
+    yes_mode = False
+    slack_mode = False
+
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--date" and i + 1 < len(args):
+            date_arg = args[i + 1]
+            i += 2
+        elif arg in ("--yes", "-y"):
+            yes_mode = True
+            i += 1
+        elif arg == "--slack":
+            slack_mode = True
+            i += 1
+        elif not arg.startswith("-"):
+            date_arg = arg
+            i += 1
+        else:
+            i += 1
 
     target_date = parse_date(date_arg)
     week_id, week_dates, start_date, end_date = get_week_context(target_date)
@@ -564,11 +626,35 @@ def main() -> None:
     retrospective_path = vault_path / daily_folder / f"{week_id}-회고.md"
     quiz_path = vault_path / quizzes_folder / f"{week_id}-quiz.md"
 
-    saved = confirm_and_save(retro_md, quiz_md, retrospective_path, quiz_path)
+    # yes 모드일 경우 바로 저장
+    if yes_mode:
+        retro_path_obj = retrospective_path
+        quiz_path_obj = quiz_path
+        retro_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        quiz_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        retro_path_obj.write_text(retro_md, encoding="utf-8")
+        quiz_path_obj.write_text(quiz_md, encoding="utf-8")
+        saved = True
+    else:
+        saved = confirm_and_save(retro_md, quiz_md, retrospective_path, quiz_path)
+
     if saved:
         print(f"\n✅ 저장 완료:")
         print(f"   {retrospective_path}")
         print(f"   {quiz_path}")
+
+        # Slack 알림
+        if slack_mode:
+            print("\n📤 Slack 알림 전송 중...")
+            stats = {
+                "draft_notes": len(draft_notes),
+                "daily_notes": len(daily_notes),
+                "quick_notes": len(quick_notes),
+            }
+            if send_slack_notification(week_id, stats):
+                print("✅ Slack 알림 전송 완료!")
+            else:
+                print("❌ Slack 알림 전송 실패")
     else:
         print("\n⏭️  저장을 건너뛰었습니다.")
 

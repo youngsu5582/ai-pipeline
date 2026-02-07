@@ -78,7 +78,97 @@ ai-process() {
     _ai_python "$AI_SCRIPTS/processor.py" --show-prompt "$@"
 }
 
+# === 문서 정리 ===
+
+# vacuum: 흩어진 MD 파일 정리
+# 사용법: vacuum [프로젝트 경로] [--dry-run] [--to-obsidian] [--json]
+vacuum() {
+    _ai_python "$AI_SCRIPTS/vacuum.py" "$@"
+}
+
+# vacuum-notify: Slack으로 정리할 파일 알림
+# 사용법: vacuum-notify [프로젝트 경로]
+# 필요: SLACK_WEBHOOK_URL 환경변수
+vacuum-notify() {
+    "$AI_SCRIPTS/vacuum-notify.sh" "$@"
+}
+
+# === 대시보드 ===
+
+# ai-dashboard: Cron 작업 관리 웹 대시보드
+# 사용법: ai-dashboard (시작) | ai-dashboard stop (중지)
+ai-dashboard() {
+    local DASHBOARD_DIR="$AI_PIPELINE_DIR/dashboard"
+    local PID_FILE="$DASHBOARD_DIR/.pid"
+
+    case "${1:-start}" in
+        start)
+            if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
+                echo "✅ Dashboard already running at http://localhost:3030"
+                return
+            fi
+            echo "🚀 Starting AI Pipeline Dashboard..."
+            cd "$DASHBOARD_DIR" && nohup node server.js > logs/server.log 2>&1 &
+            echo $! > "$PID_FILE"
+            sleep 1
+            echo "✅ Dashboard started at http://localhost:3030"
+            ;;
+        stop)
+            if [ -f "$PID_FILE" ]; then
+                kill $(cat "$PID_FILE") 2>/dev/null
+                rm "$PID_FILE"
+                echo "🛑 Dashboard stopped"
+            else
+                echo "Dashboard is not running"
+            fi
+            ;;
+        restart)
+            ai-dashboard stop
+            sleep 1
+            ai-dashboard start
+            ;;
+        status)
+            if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
+                echo "✅ Dashboard running (PID: $(cat $PID_FILE))"
+            else
+                echo "❌ Dashboard not running"
+            fi
+            ;;
+        log)
+            # 전체 로그 출력 후 follow
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📜 Dashboard Server Log"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            cat "$DASHBOARD_DIR/logs/server.log"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📡 실시간 로그 (Ctrl+C로 종료)"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            tail -f "$DASHBOARD_DIR/logs/server.log"
+            ;;
+        logs)
+            # 전체 로그만 출력 (follow 없음)
+            cat "$DASHBOARD_DIR/logs/server.log"
+            ;;
+        *)
+            echo "Usage: ai-dashboard [start|stop|restart|status|log|logs]"
+            echo "  start   - 대시보드 시작"
+            echo "  stop    - 대시보드 중지"
+            echo "  restart - 대시보드 재시작"
+            echo "  status  - 실행 상태 확인"
+            echo "  log     - 전체 로그 + 실시간 follow"
+            echo "  logs    - 전체 로그만 출력"
+            ;;
+    esac
+}
+
 # === 유틸리티 ===
+
+# ai-check: 환경 검증
+# 사용법: ai-check [--api] [--clean]
+ai-check() {
+    _ai_python "$AI_SCRIPTS/ai_check.py" "$@"
+}
 
 # ai-status: 오늘의 기록 상태
 ai-status() {
@@ -123,7 +213,17 @@ ai-help() {
     echo "  ai-weekly           주간 회고 생성"
     echo "  ai-monthly          월간 리포트 생성"
     echo ""
+    echo "🧹 문서 정리"
+    echo "  vacuum <path>       흩어진 MD 파일 정리 (--dry-run, --to-obsidian)"
+    echo "  vacuum-notify       Slack으로 정리할 파일 알림"
+    echo ""
+    echo "📊 대시보드"
+    echo "  ai-dashboard        Cron 작업 관리 웹 UI (http://localhost:3030)"
+    echo "  ai-dashboard stop   대시보드 중지"
+    echo "  ai-dashboard log    서버 로그 보기"
+    echo ""
     echo "🔧 유틸리티"
+    echo "  ai-check            환경 검증 (--api: API 테스트, --clean: 좀비 정리)"
     echo "  ai-status           오늘의 기록 상태"
     echo "  ai-help             이 도움말"
     echo ""

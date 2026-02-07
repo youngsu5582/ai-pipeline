@@ -43,6 +43,34 @@ def load_config() -> dict:
 CONFIG = load_config()
 
 
+def get_jira_config() -> dict:
+    """Jira 설정 조회"""
+    sync_config = CONFIG.get("sync", {})
+    return sync_config.get("jira", {})
+
+
+def linkify_jira_tickets(text: str) -> str:
+    """커밋 메시지에서 Jira 티켓 번호를 링크로 변환
+
+    예: PROJECT-KEY-496 -> [PROJECT-KEY-496](https://jira.../browse/PROJECT-KEY-496)
+    """
+    jira_config = get_jira_config()
+    jira_server = jira_config.get("server", "")
+
+    if not jira_server:
+        return text
+
+    # Jira 티켓 패턴: 대문자-숫자 (예: PROJECT-KEY-496, PROJ-123)
+    pattern = r'\b([A-Z][A-Z0-9]+-\d+)\b'
+
+    def replace_ticket(match):
+        ticket = match.group(1)
+        url = f"{jira_server.rstrip('/')}/browse/{ticket}"
+        return f"[{ticket}]({url})"
+
+    return re.sub(pattern, replace_ticket, text)
+
+
 def get_github_config() -> dict:
     """GitHub sync 설정 조회"""
     sync_config = CONFIG.get("sync", {})
@@ -128,6 +156,29 @@ def get_git_user_info(repo_path: Path) -> tuple[str, str]:
         return "", ""
 
 
+def get_commit_branches(repo_path: Path, sha: str) -> list[str]:
+    """커밋이 속한 브랜치 목록 조회"""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "branch", "-a", "--contains", sha],
+            capture_output=True,
+            text=True,
+        )
+        branches = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            # "* main" 또는 "  feature/xxx" 형식
+            branch = line.strip().lstrip("* ")
+            # remotes/origin/xxx -> origin/xxx 제거 (로컬 브랜치만)
+            if branch.startswith("remotes/"):
+                continue
+            branches.append(branch)
+        return branches
+    except Exception:
+        return []
+
+
 def get_git_remote_url(repo_path: Path) -> str:
     """git remote URL에서 GitHub URL 추출"""
     try:
@@ -151,13 +202,65 @@ def get_git_remote_url(repo_path: Path) -> str:
         return ""
 
 
-def get_commits_from_repos(username: str, target_date: str) -> list[dict]:
-    """git log로 로컬 커밋 수집 (시간, GitHub URL 포함)"""
+def get_repo_owner_name(remote_url: str) -> tuple[str, str]:
+    """GitHub URL에서 owner/repo 추출
+
+    예: https://github.com/owner/repo -> (owner, repo)
+    """
+    if not remote_url:
+        return "", ""
+    match = re.match(r"https://[^/]+/([^/]+)/([^/]+)/?", remote_url)
+    if match:
+        return match.group(1), match.group(2)
+    return "", ""
+
+
+def get_commit_pr(owner: str, repo: str, sha: str) -> Optional[dict]:
+    """커밋이 속한 PR 조회 (GitHub API)
+
+    Returns:
+        PR 정보 dict (number, title, url) 또는 None
+    """
+    if not owner or not repo or not sha:
+        return None
+
+    result = run_gh_command([
+        "api",
+        f"repos/{owner}/{repo}/commits/{sha}/pulls",
+        "--jq", ".[0] | {number, title, html_url}"
+    ])
+
+    if not result or result == "null":
+        return None
+
+    try:
+        pr_data = json.loads(result)
+        if pr_data and pr_data.get("number"):
+            return {
+                "number": pr_data.get("number"),
+                "title": pr_data.get("title", ""),
+                "url": pr_data.get("html_url", ""),
+            }
+    except json.JSONDecodeError:
+        pass
+
+    return None
+
+
+def get_commits_from_repos(username: str, target_date: str, override_repos: list[str] = None) -> list[dict]:
+    """git log로 로컬 커밋 수집 (시간, GitHub URL 포함)
+
+    Args:
+        override_repos: CLI에서 지정한 저장소 경로 목록 (지정 시 settings.yaml 무시)
+    """
     commits = []
 
     # 설정된 repos 경로들에서 커밋 조회
-    github_config = get_github_config()
-    repos_config = github_config.get("repos", [])
+    if override_repos:
+        repos_config = override_repos
+    else:
+        github_config = get_github_config()
+        repos_config = github_config.get("repos", [])
 
     for repo_path in repos_config:
         repo = Path(repo_path).expanduser()
@@ -168,6 +271,8 @@ def get_commits_from_repos(username: str, target_date: str) -> list[dict]:
         git_name, git_email = get_git_user_info(repo)
         # GitHub URL 가져오기
         remote_url = get_git_remote_url(repo)
+        # owner/repo 추출 (PR 조회용)
+        owner, repo_name = get_repo_owner_name(remote_url)
 
         try:
             # 모든 브랜치에서 해당 날짜의 커밋 조회
@@ -196,6 +301,8 @@ def get_commits_from_repos(username: str, target_date: str) -> list[dict]:
 
             result = subprocess.run(cmd, capture_output=True, text=True)
 
+            # 먼저 커밋 기본 정보 수집
+            repo_commits_raw = []
             for line in result.stdout.strip().split("\n"):
                 if not line:
                     continue
@@ -211,18 +318,44 @@ def get_commits_from_repos(username: str, target_date: str) -> list[dict]:
                         except ValueError:
                             pass
 
-                    commits.append(
-                        {
-                            "repo": repo.name,
-                            "sha": full_sha[:7],
-                            "full_sha": full_sha,
-                            "message": parts[1],
-                            "author": parts[2] if len(parts) > 2 else username,
-                            "time": time_str,
-                            "url": f"{remote_url}/commit/{full_sha}" if remote_url else "",
-                            "repo_url": remote_url,
-                        }
-                    )
+                    repo_commits_raw.append({
+                        "full_sha": full_sha,
+                        "message": parts[1],
+                        "author": parts[2] if len(parts) > 2 else username,
+                        "time": time_str,
+                    })
+
+            # 커밋별로 브랜치/PR 정보 조회 (진행 상황 표시)
+            total = len(repo_commits_raw)
+            for idx, commit_raw in enumerate(repo_commits_raw, 1):
+                full_sha = commit_raw["full_sha"]
+
+                # 진행 상황 표시
+                print(f"\r   🔍 {repo.name}: PR 정보 조회 중... ({idx}/{total})", end="", flush=True)
+
+                # 브랜치 정보 조회
+                branches = get_commit_branches(repo, full_sha)
+
+                # PR 정보 조회 (GitHub API)
+                pr_info = get_commit_pr(owner, repo_name, full_sha)
+
+                commits.append(
+                    {
+                        "repo": repo.name,
+                        "sha": full_sha[:7],
+                        "full_sha": full_sha,
+                        "message": commit_raw["message"],
+                        "author": commit_raw["author"],
+                        "time": commit_raw["time"],
+                        "url": f"{remote_url}/commit/{full_sha}" if remote_url else "",
+                        "repo_url": remote_url,
+                        "branches": branches,
+                        "pr": pr_info,
+                    }
+                )
+
+            if repo_commits_raw:
+                print()  # 줄바꿈
         except Exception:
             continue
 
@@ -401,24 +534,106 @@ def build_github_section(activities: dict, commits: list[dict]) -> str:
             seen_shas.add(c["sha"])
             unique_commits.append(c)
 
-    # 시간순 정렬
-    unique_commits.sort(key=lambda x: x.get("time", ""))
+    # 저장소별로 그룹화
+    repo_commits: dict[str, list[dict]] = {}
+    for commit in unique_commits:
+        repo = commit.get("repo", "unknown")
+        if repo not in repo_commits:
+            repo_commits[repo] = []
+        repo_commits[repo].append(commit)
 
     if unique_commits:
         lines.append("\n### Commits")
-        for commit in unique_commits:
-            repo = commit.get("repo", "")
-            msg = commit.get("message", "")
-            sha = commit.get("sha", "")
-            time_str = commit.get("time", "")
-            url = commit.get("url", "")
-            repo_url = commit.get("repo_url", "")
 
-            time_badge = f"`{time_str}` " if time_str else ""
-            # repo 링크, commit 링크
-            repo_link = f"[{repo}]({repo_url})" if repo_url else f"`{repo}`"
-            sha_link = f"[{sha}]({url})" if url else f"`{sha}`"
-            lines.append(f"- {time_badge}{repo_link} {sha_link} {msg}")
+        for repo, repo_commit_list in sorted(repo_commits.items()):
+            # 저장소 헤더
+            repo_url = repo_commit_list[0].get("repo_url", "") if repo_commit_list else ""
+            repo_link = f"[{repo}]({repo_url})" if repo_url else f"**{repo}**"
+            lines.append(f"\n#### {repo_link}")
+
+            # PR별로 커밋 그룹화
+            pr_groups: dict[Optional[int], list[dict]] = {}  # PR number -> commits
+            pr_info_map: dict[int, dict] = {}  # PR number -> PR info
+
+            for commit in repo_commit_list:
+                pr = commit.get("pr")
+                pr_number = pr.get("number") if pr else None
+
+                if pr_number not in pr_groups:
+                    pr_groups[pr_number] = []
+                pr_groups[pr_number].append(commit)
+
+                # PR 정보 저장
+                if pr and pr_number and pr_number not in pr_info_map:
+                    pr_info_map[pr_number] = pr
+
+            # PR별로 출력 (PR 있는 것 먼저, 시간순)
+            sorted_pr_numbers = sorted(
+                pr_groups.keys(),
+                key=lambda x: (
+                    x is None,  # None(PR 없음)은 마지막에
+                    min(c.get("time", "") for c in pr_groups[x])
+                )
+            )
+
+            for pr_number in sorted_pr_numbers:
+                pr_commits = pr_groups[pr_number]
+
+                # PR 헤더 (있으면)
+                if pr_number is not None:
+                    pr = pr_info_map.get(pr_number, {})
+                    pr_title = pr.get("title", "")
+                    pr_url = pr.get("url", "")
+                    pr_title_with_jira = linkify_jira_tickets(pr_title)
+                    pr_link = f"[#{pr_number}]({pr_url})" if pr_url else f"#{pr_number}"
+                    lines.append(f"\n**{pr_link}** {pr_title_with_jira}")
+
+                # 같은 메시지의 커밋 병합 (메시지 기준으로 그룹화)
+                message_groups: dict[str, list[dict]] = {}
+                for commit in pr_commits:
+                    msg = commit.get("message", "")
+                    if msg not in message_groups:
+                        message_groups[msg] = []
+                    message_groups[msg].append(commit)
+
+                # 시간순 정렬 (첫 번째 커밋 시간 기준)
+                sorted_groups = sorted(
+                    message_groups.items(),
+                    key=lambda x: min(c.get("time", "") for c in x[1])
+                )
+
+                for msg, commits_with_same_msg in sorted_groups:
+                    # 시간순 정렬
+                    commits_with_same_msg.sort(key=lambda x: x.get("time", ""))
+                    first_commit = commits_with_same_msg[0]
+                    time_str = first_commit.get("time", "")
+                    time_badge = f"`{time_str}` " if time_str else ""
+
+                    # SHA 링크들 (중복 메시지가 여러 커밋에 있으면 모두 표시)
+                    sha_links = []
+                    for c in commits_with_same_msg:
+                        sha = c.get("sha", "")
+                        url = c.get("url", "")
+                        sha_link = f"[{sha}]({url})" if url else f"`{sha}`"
+                        sha_links.append(sha_link)
+
+                    # 브랜치 정보 수집 (중복 제거)
+                    all_branches = set()
+                    for c in commits_with_same_msg:
+                        for branch in c.get("branches", []):
+                            all_branches.add(branch)
+
+                    # 브랜치 표시 (있으면)
+                    branch_info = ""
+                    if all_branches:
+                        branch_list = ", ".join(sorted(all_branches))
+                        branch_info = f" `({branch_list})`"
+
+                    # 여러 SHA가 있으면 같이 표시
+                    sha_text = ", ".join(sha_links)
+                    # Jira 티켓 번호를 링크로 변환
+                    msg_with_jira = linkify_jira_tickets(msg)
+                    lines.append(f"- {time_badge}{sha_text} {msg_with_jira}{branch_info}")
 
     # Pull Requests
     prs = activities.get("prs", [])
@@ -439,8 +654,9 @@ def build_github_section(activities: dict, commits: list[dict]) -> str:
             time_badge = f"`{time_str}` " if time_str else ""
             repo_link = f"[{pr['repo']}]({repo_url})" if repo_url else f"`{pr['repo']}`"
             pr_link = f"[#{pr['number']}]({url})" if url else f"#{pr['number']}"
+            pr_title_with_jira = linkify_jira_tickets(pr['title'])
             lines.append(
-                f"- {time_badge}{action_emoji} {repo_link} {pr_link} {pr['title']}"
+                f"- {time_badge}{action_emoji} {repo_link} {pr_link} {pr_title_with_jira}"
             )
 
     # Reviews + Comments: PR별로 그룹화
@@ -523,8 +739,9 @@ def build_github_section(activities: dict, commits: list[dict]) -> str:
             repo_link = f"[{repo}]({repo_url})" if repo_url else f"`{repo}`"
             number_link = f"[#{pr_number}]({url})" if url else f"#{pr_number}"
 
-            # PR/Issue 헤더
-            lines.append(f"- {repo_link} {number_link} {pr_title}")
+            # PR/Issue 헤더 (Jira 티켓 링크 적용)
+            pr_title_with_jira = linkify_jira_tickets(pr_title)
+            lines.append(f"- {repo_link} {number_link} {pr_title_with_jira}")
 
             # 아이템들 (시간순 정렬)
             items.sort(key=lambda x: x.get("time", ""))
@@ -592,13 +809,30 @@ def update_daily_note(target_date: str, github_section: str) -> str:
 
 
 def main():
-    # 날짜 파라미터 처리
-    if "--today" in sys.argv:
-        target_date = datetime.now().strftime("%Y-%m-%d")
-    elif len(sys.argv) > 1 and sys.argv[1] != "--today":
-        target_date = sys.argv[1]
-    else:
-        # 기본값: 어제
+    # 옵션 파싱
+    yes_mode = "--yes" in sys.argv or "-y" in sys.argv
+    args = [a for a in sys.argv[1:] if a not in ("--yes", "-y")]
+
+    target_date = None
+    override_repos = []
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--today":
+            target_date = datetime.now().strftime("%Y-%m-%d")
+            i += 1
+        elif arg == "--repos" and i + 1 < len(args):
+            override_repos = [r.strip() for r in args[i + 1].split(",") if r.strip()]
+            i += 2
+        elif not arg.startswith("-"):
+            target_date = arg
+            i += 1
+        else:
+            i += 1
+
+    # 기본값: 어제
+    if not target_date:
         target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -615,7 +849,7 @@ def main():
     activities = parse_events(events)
 
     # 로컬 git 커밋도 수집
-    commits = get_commits_from_repos(username, target_date)
+    commits = get_commits_from_repos(username, target_date, override_repos=override_repos)
 
     # 통계 출력
     total_commits = len(commits) + len(activities.get("commits", []))
@@ -647,10 +881,13 @@ def main():
     print("━" * 40)
 
     # Daily Note 업데이트
-    try:
-        choice = input("\nDaily Note에 추가할까요? [Y/n]: ").strip().lower()
-    except EOFError:
+    if yes_mode:
         choice = "y"
+    else:
+        try:
+            choice = input("\nDaily Note에 추가할까요? [Y/n]: ").strip().lower()
+        except EOFError:
+            choice = "y"
 
     if choice in ["", "y", "yes"]:
         result_path = update_daily_note(target_date, github_section)
