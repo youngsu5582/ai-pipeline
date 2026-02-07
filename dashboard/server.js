@@ -3403,6 +3403,19 @@ function saveMorningPlans(plans) {
   fs.writeFileSync(MORNING_PLANS_FILE, JSON.stringify(plans, null, 2));
 }
 
+// GET /api/morning-plans - 모닝 플랜 목록 조회
+app.get('/api/morning-plans', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const plans = loadMorningPlans();
+    const list = plans.map(p => ({ id: p.id, date: p.date, createdAt: p.createdAt }))
+      .reverse().slice(0, limit);
+    res.json({ plans: list });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/morning-plan - 날짜별 모닝 플랜 조회
 app.get('/api/morning-plan', (req, res) => {
   const { date } = req.query;
@@ -4510,8 +4523,12 @@ app.get('/api/reports/daily', (req, res) => {
       return res.json({ reports: dateReports });
     }
 
-    // 최근 30개
-    res.json({ reports: reports.slice(-30).reverse() });
+    // 최근 N개 (기본 30)
+    const limit = parseInt(req.query.limit) || 30;
+    const list = reports.slice(-limit).reverse().map(r => ({
+      id: r.id, date: r.date, type: r.type, createdAt: r.createdAt
+    }));
+    res.json({ reports: list });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -6089,8 +6106,12 @@ app.get('/api/insights/weekly-digest', (req, res) => {
     return res.json({ digest: digest || null });
   }
 
-  // 최근 10개
-  res.json({ digests: digests.slice(-10).reverse() });
+  // 최근 N개 (기본 10)
+  const limit = parseInt(req.query.limit) || 10;
+  const list = digests.slice(-limit).reverse().map(d => ({
+    id: d.id, weekStart: d.weekStart, weekEnd: d.weekEnd, createdAt: d.createdAt, stats: d.stats
+  }));
+  res.json({ digests: list });
 });
 
 // Graceful shutdown

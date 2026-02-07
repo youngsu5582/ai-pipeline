@@ -373,6 +373,9 @@
       <button onclick="showTab('notes')" id="tab-notes" class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
         📋 노트
       </button>
+      <button onclick="showTab('analysis')" id="tab-analysis" class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+        📊 분석
+      </button>
     </div>
 
     <!-- Home Dashboard -->
@@ -1202,6 +1205,190 @@
       <!-- Notes List -->
       <div id="notesList" class="space-y-2">
         <div class="text-center text-gray-500 py-8">로딩 중...</div>
+      </div>
+    </div>
+
+    <!-- Analysis Tab -->
+    <div id="panel-analysis" class="hidden">
+      <!-- 서브탭 네비게이션 -->
+      <div class="flex gap-2 mb-4">
+        <button id="analysisSub-overview" onclick="showAnalysisSubTab('overview')"
+          class="analysis-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white">📊 종합</button>
+        <button id="analysisSub-morning" onclick="showAnalysisSubTab('morning')"
+          class="analysis-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">☀️ 하루 시작</button>
+        <button id="analysisSub-report" onclick="showAnalysisSubTab('report')"
+          class="analysis-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">📊 오늘 보고서</button>
+        <button id="analysisSub-weekly" onclick="showAnalysisSubTab('weekly')"
+          class="analysis-sub-btn px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 text-gray-400 hover:text-white">📈 주간 분석</button>
+      </div>
+
+      <!-- 종합 서브패널 -->
+      <div id="analysisSubPanel-overview">
+        <!-- 스마트 서제스션 -->
+        <div id="analysisSuggestions" class="mb-4 space-y-2"></div>
+
+        <!-- 생산성 분석 -->
+        <div class="bg-gray-800/50 rounded-xl p-5 border border-gray-700/50">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-gray-300">생산성 분석</h3>
+            <div class="flex items-center gap-2">
+              <button onclick="setAnalysisProdPeriod(7)" id="aProdPeriod7" class="a-prod-period-btn px-2 py-0.5 rounded text-xs border border-blue-600 text-blue-400 bg-blue-900/30">7일</button>
+              <button onclick="setAnalysisProdPeriod(14)" id="aProdPeriod14" class="a-prod-period-btn px-2 py-0.5 rounded text-xs border border-gray-600 text-gray-400">14일</button>
+              <button onclick="setAnalysisProdPeriod(30)" id="aProdPeriod30" class="a-prod-period-btn px-2 py-0.5 rounded text-xs border border-gray-600 text-gray-400">30일</button>
+            </div>
+          </div>
+          <!-- 4칸 요약 -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <div class="text-xs text-gray-500">총 세션</div>
+              <div id="aProdTotalSessions" class="text-2xl font-bold mt-0.5">-</div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <div class="text-xs text-gray-500">총 메모</div>
+              <div id="aProdTotalMemos" class="text-2xl font-bold mt-0.5">-</div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <div class="text-xs text-gray-500">작업 실행</div>
+              <div id="aProdTotalJobs" class="text-2xl font-bold mt-0.5">-</div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <div class="text-xs text-gray-500">일평균 메모</div>
+              <div id="aProdAvgMemos" class="text-2xl font-bold mt-0.5">-</div>
+            </div>
+          </div>
+          <!-- 차트 2x2 -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <h4 class="text-xs text-gray-400 mb-2">시간대별 활동</h4>
+              <div id="aHourlyHeatmap" class="grid gap-0.5" style="grid-template-columns: repeat(24, 1fr); height: 80px;"></div>
+              <div class="flex justify-between mt-1 px-0.5">
+                <span class="text-[9px] text-gray-600">0시</span>
+                <span class="text-[9px] text-gray-600">6시</span>
+                <span class="text-[9px] text-gray-600">12시</span>
+                <span class="text-[9px] text-gray-600">18시</span>
+                <span class="text-[9px] text-gray-600">24시</span>
+              </div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <h4 class="text-xs text-gray-400 mb-2">프로젝트 분포</h4>
+              <div style="position:relative; height:140px;">
+                <canvas id="aProjectDistChart"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <h4 class="text-xs text-gray-400 mb-2">일별 트렌드</h4>
+              <div style="position:relative; height:140px;">
+                <canvas id="aProdDailyTrendChart"></canvas>
+              </div>
+            </div>
+            <div class="bg-gray-900/50 rounded-lg p-3">
+              <h4 class="text-xs text-gray-400 mb-2">기간 비교 (전반 vs 후반)</h4>
+              <div style="position:relative; height:140px;">
+                <canvas id="aWeekCompChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 하루 시작 서브패널 -->
+      <div id="analysisSubPanel-morning" class="hidden">
+        <div class="flex gap-4" style="min-height: 600px;">
+          <!-- 왼쪽 사이드바: 이전 기록 -->
+          <div class="w-64 flex-shrink-0 bg-gray-800/50 rounded-xl border border-gray-700/50 p-4 overflow-y-auto" style="max-height: 700px;">
+            <h3 class="text-sm font-bold text-gray-300 mb-3">📋 이전 기록</h3>
+            <div id="morningPlanList" class="space-y-1">
+              <div class="text-xs text-gray-500 text-center py-4">로딩 중...</div>
+            </div>
+          </div>
+          <!-- 오른쪽 메인: 상세 -->
+          <div class="flex-1 bg-gray-800/50 rounded-xl border border-gray-700/50 p-5">
+            <!-- 날짜 네비게이션 -->
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-bold">☀️ 하루 시작</h3>
+              <div class="flex items-center gap-1 bg-gray-800 rounded-lg px-1 py-1">
+                <button onclick="shiftAnalysisMorningDate(-1)" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">&lsaquo;</button>
+                <span id="analysisMorningDateLabel" class="px-3 py-1 text-sm text-gray-300 font-medium"></span>
+                <button onclick="shiftAnalysisMorningDate(1)" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">&rsaquo;</button>
+                <button onclick="resetAnalysisMorningDate()" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-xs ml-1">오늘</button>
+              </div>
+            </div>
+            <div id="morningPlanDetail" class="prose prose-invert max-w-none text-sm">
+              <div class="text-center text-gray-500 py-12">날짜를 선택하세요</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 오늘 보고서 서브패널 -->
+      <div id="analysisSubPanel-report" class="hidden">
+        <div class="flex gap-4" style="min-height: 600px;">
+          <!-- 왼쪽 사이드바: 이전 보고서 -->
+          <div class="w-64 flex-shrink-0 bg-gray-800/50 rounded-xl border border-gray-700/50 p-4 overflow-y-auto" style="max-height: 700px;">
+            <h3 class="text-sm font-bold text-gray-300 mb-3">📋 이전 보고서</h3>
+            <div id="reportList" class="space-y-1">
+              <div class="text-xs text-gray-500 text-center py-4">로딩 중...</div>
+            </div>
+          </div>
+          <!-- 오른쪽 메인: 상세 -->
+          <div class="flex-1 bg-gray-800/50 rounded-xl border border-gray-700/50 p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-bold">📊 오늘 보고서</h3>
+              <div id="reportActions" class="flex gap-2 hidden">
+                <button onclick="copyReportToClipboard()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">📋 복사</button>
+                <button onclick="downloadReport()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">💾 다운로드</button>
+              </div>
+            </div>
+            <div id="reportDetail" class="prose prose-invert max-w-none text-sm">
+              <div class="text-center text-gray-500 py-12">보고서를 선택하세요</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 주간 분석 서브패널 -->
+      <div id="analysisSubPanel-weekly" class="hidden">
+        <div class="flex gap-4" style="min-height: 600px;">
+          <!-- 왼쪽 사이드바: 이전 다이제스트 -->
+          <div class="w-64 flex-shrink-0 bg-gray-800/50 rounded-xl border border-gray-700/50 p-4 overflow-y-auto" style="max-height: 700px;">
+            <h3 class="text-sm font-bold text-gray-300 mb-3">📋 이전 다이제스트</h3>
+            <div id="weeklyDigestList" class="space-y-1">
+              <div class="text-xs text-gray-500 text-center py-4">로딩 중...</div>
+            </div>
+          </div>
+          <!-- 오른쪽 메인: 상세 -->
+          <div class="flex-1 bg-gray-800/50 rounded-xl border border-gray-700/50 p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-bold">📈 주간 분석</h3>
+              <div id="weeklyActions" class="flex gap-2 hidden">
+                <button onclick="copyWeeklyToClipboard()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">📋 복사</button>
+              </div>
+            </div>
+            <div id="weeklyDigestStats" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" style="display:none">
+              <div class="bg-gray-900/50 rounded-lg p-3">
+                <div class="text-xs text-gray-500">세션</div>
+                <div id="wdStatSessions" class="text-2xl font-bold mt-0.5">-</div>
+              </div>
+              <div class="bg-gray-900/50 rounded-lg p-3">
+                <div class="text-xs text-gray-500">작업 실행</div>
+                <div id="wdStatJobs" class="text-2xl font-bold mt-0.5">-</div>
+              </div>
+              <div class="bg-gray-900/50 rounded-lg p-3">
+                <div class="text-xs text-gray-500">메모</div>
+                <div id="wdStatMemos" class="text-2xl font-bold mt-0.5">-</div>
+              </div>
+              <div class="bg-gray-900/50 rounded-lg p-3">
+                <div class="text-xs text-gray-500">성공률</div>
+                <div id="wdStatSuccess" class="text-2xl font-bold mt-0.5">-</div>
+              </div>
+            </div>
+            <div id="weeklyDigestDetail" class="prose prose-invert max-w-none text-sm">
+              <div class="text-center text-gray-500 py-12">다이제스트를 선택하세요</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -3551,7 +3738,7 @@
       document.getElementById(`tab-${tab}`).classList.add('border-blue-500', 'text-blue-400');
       document.getElementById(`tab-${tab}`).classList.remove('border-transparent', 'text-gray-400');
 
-      ['home', 'jobs', 'settings', 'sessions', 'notes'].forEach(p => {
+      ['home', 'jobs', 'settings', 'sessions', 'notes', 'analysis'].forEach(p => {
         document.getElementById(`panel-${p}`).classList.toggle('hidden', tab !== p);
       });
 
@@ -3560,6 +3747,7 @@
       if (tab === 'settings') loadSettings();
       if (tab === 'sessions') initSessionsTab();
       if (tab === 'notes') { initNotesDate(); loadNotes(); }
+      if (tab === 'analysis') showAnalysisSubTab(currentAnalysisSubTab);
     }
 
     function showJobSubTab(sub) {
@@ -5513,6 +5701,10 @@
           e.preventDefault();
           showTab('notes');
           break;
+        case '6':  // 분석 탭
+          e.preventDefault();
+          showTab('analysis');
+          break;
         case 'g':  // 그래프 뷰 토글
           e.preventDefault();
           if (document.getElementById('panel-jobs').classList.contains('hidden')) return;
@@ -5552,7 +5744,7 @@
         </div>`
       ).join('');
 
-      showToast('⌨️ 단축키: N(새작업) G(그래프) 1-5(탭) /(검색) R(새로고침)', 'info', 6000);
+      showToast('⌨️ 단축키: N(새작업) G(그래프) 1-6(탭) /(검색) R(새로고침)', 'info', 6000);
     }
 
     // ============ Sessions Tab Functions ============
@@ -7543,6 +7735,429 @@
       const modal = document.getElementById('sessionDetailModal');
       const md = modal?._digestMarkdown || '';
       navigator.clipboard.writeText(md).then(() => showToast('클립보드에 복사됨', 'success'));
+    }
+
+    // ============ 분석 탭 ============
+
+    let currentAnalysisSubTab = 'overview';
+    let analysisMorningDate = getKSTDateString();
+    let analysisProdPeriod = 7;
+    let aProjectDistChart = null;
+    let aProdDailyTrendChart = null;
+    let aWeekCompChart = null;
+    let selectedReportData = null;
+    let selectedWeeklyData = null;
+
+    function showAnalysisSubTab(sub) {
+      currentAnalysisSubTab = sub;
+      document.querySelectorAll('.analysis-sub-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-gray-700', 'text-gray-400');
+      });
+      const activeBtn = document.getElementById(`analysisSub-${sub}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-gray-700', 'text-gray-400');
+        activeBtn.classList.add('bg-blue-600', 'text-white');
+      }
+
+      ['overview', 'morning', 'report', 'weekly'].forEach(s => {
+        const panel = document.getElementById(`analysisSubPanel-${s}`);
+        if (panel) panel.classList.toggle('hidden', s !== sub);
+      });
+
+      if (sub === 'overview') loadAnalysisOverview();
+      if (sub === 'morning') loadAnalysisMorning();
+      if (sub === 'report') loadAnalysisReport();
+      if (sub === 'weekly') loadAnalysisWeekly();
+    }
+
+    // --- 종합 ---
+    async function loadAnalysisOverview() {
+      // 서제스션
+      try {
+        const res = await fetch(`${API_BASE}/api/insights/suggestions`);
+        const data = await res.json();
+        const dismissed = getDismissedSuggestions();
+        const suggestions = (data.suggestions || []).filter(s => !dismissed[s.id]);
+        const container = document.getElementById('analysisSuggestions');
+        if (suggestions.length === 0) { container.innerHTML = ''; }
+        else {
+          container.innerHTML = suggestions.map(s => {
+            const actionHandler = s.action
+              ? (s.action.type === 'showTab' ? `showTab('${s.action.tab}')` : `${s.action.type}()`)
+              : '';
+            const clickAttr = actionHandler ? `onclick="${actionHandler}"` : '';
+            const cursorClass = actionHandler ? 'cursor-pointer' : '';
+            const borderColor = s.type === 'achievement' ? 'border-green-700/50' : s.type === 'reminder' && s.priority === 'high' ? 'border-red-700/50' : 'border-gray-700/50';
+            return `<div id="a-suggestion-${s.id}" ${clickAttr}
+              class="flex items-center gap-3 p-3 rounded-lg bg-gray-800/60 border ${borderColor} hover:bg-gray-800 transition-colors ${cursorClass}">
+              <span class="text-lg flex-shrink-0">${s.icon}</span>
+              <span class="text-sm text-gray-300 flex-1">${s.message}</span>
+              <button onclick="event.stopPropagation(); dismissSuggestion('${s.id}')"
+                class="ml-auto text-gray-600 hover:text-gray-400 text-xs flex-shrink-0 px-1">✕</button>
+            </div>`;
+          }).join('');
+        }
+      } catch (err) { console.error('분석탭 서제스션 로드 실패:', err); }
+
+      // 생산성
+      loadAnalysisProductivity();
+    }
+
+    function setAnalysisProdPeriod(days) {
+      analysisProdPeriod = days;
+      document.querySelectorAll('.a-prod-period-btn').forEach(btn => {
+        btn.classList.remove('border-blue-600', 'text-blue-400', 'bg-blue-900/30');
+        btn.classList.add('border-gray-600', 'text-gray-400');
+      });
+      const active = document.getElementById(`aProdPeriod${days}`);
+      if (active) {
+        active.classList.remove('border-gray-600', 'text-gray-400');
+        active.classList.add('border-blue-600', 'text-blue-400', 'bg-blue-900/30');
+      }
+      loadAnalysisProductivity();
+    }
+
+    async function loadAnalysisProductivity() {
+      try {
+        const res = await fetch(`${API_BASE}/api/insights/productivity?days=${analysisProdPeriod}`);
+        const data = await res.json();
+
+        document.getElementById('aProdTotalSessions').textContent = data.overview.totalSessions;
+        document.getElementById('aProdTotalMemos').textContent = data.overview.totalMemos;
+        document.getElementById('aProdTotalJobs').textContent = data.overview.totalJobRuns;
+        document.getElementById('aProdAvgMemos').textContent = data.overview.avgDailyMemos;
+
+        renderAnalysisHourlyHeatmap(data.hourlyActivity);
+        renderAnalysisProjectDist(data.topProjects);
+        renderAnalysisDailyTrend(data.dailyTrend);
+        renderAnalysisWeekComp(data.weekComparison);
+      } catch (err) { console.error('분석탭 생산성 로드 실패:', err); }
+    }
+
+    function renderAnalysisHourlyHeatmap(hourly) {
+      const container = document.getElementById('aHourlyHeatmap');
+      const maxVal = Math.max(1, ...hourly.map(h => h.sessions + h.memos + h.jobs));
+      container.innerHTML = hourly.map(h => {
+        const total = h.sessions + h.memos + h.jobs;
+        const intensity = total / maxVal;
+        const bg = total === 0 ? 'bg-gray-800'
+          : intensity < 0.25 ? 'bg-blue-900/40' : intensity < 0.5 ? 'bg-blue-700/50' : intensity < 0.75 ? 'bg-blue-500/60' : 'bg-blue-400/70';
+        const title = `${h.hour}시: 세션 ${h.sessions}, 메모 ${h.memos}, 작업 ${h.jobs}`;
+        return `<div class="${bg} rounded-sm flex flex-col justify-end items-center" title="${title}" style="min-height: 100%">
+          ${total > 0 ? `<span class="text-[9px] text-gray-300">${total}</span>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function renderAnalysisProjectDist(projects) {
+      const ctx = document.getElementById('aProjectDistChart')?.getContext('2d');
+      if (!ctx) return;
+      if (aProjectDistChart) aProjectDistChart.destroy();
+      if (!projects || projects.length === 0) { aProjectDistChart = null; return; }
+      const colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
+      aProjectDistChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: { labels: projects.map(p => p.project), datasets: [{ data: projects.map(p => p.sessions), backgroundColor: colors.slice(0, projects.length), borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#9ca3af', font: { size: 10 }, boxWidth: 12 } } } }
+      });
+    }
+
+    function renderAnalysisDailyTrend(trend) {
+      const ctx = document.getElementById('aProdDailyTrendChart')?.getContext('2d');
+      if (!ctx) return;
+      if (aProdDailyTrendChart) aProdDailyTrendChart.destroy();
+      aProdDailyTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: trend.map(d => d.date.slice(5)),
+          datasets: [
+            { label: '세션', data: trend.map(d => d.sessions), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', tension: 0.3, fill: true },
+            { label: '메모', data: trend.map(d => d.memos), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', tension: 0.3, fill: true },
+            { label: '작업', data: trend.map(d => d.jobs), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', tension: 0.3, fill: true }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { ticks: { color: '#6b7280', font: { size: 9 } }, grid: { color: 'rgba(55,65,81,0.3)' } },
+            y: { beginAtZero: true, ticks: { color: '#6b7280', font: { size: 9 }, stepSize: 1 }, grid: { color: 'rgba(55,65,81,0.3)' } }
+          },
+          plugins: { legend: { labels: { color: '#9ca3af', font: { size: 10 }, boxWidth: 12 } } }
+        }
+      });
+    }
+
+    function renderAnalysisWeekComp(comp) {
+      const ctx = document.getElementById('aWeekCompChart')?.getContext('2d');
+      if (!ctx) return;
+      if (aWeekCompChart) aWeekCompChart.destroy();
+      aWeekCompChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['세션', '메모', '작업'],
+          datasets: [
+            { label: '전반', data: [comp.firstHalf.sessions, comp.firstHalf.memos, comp.firstHalf.jobs], backgroundColor: 'rgba(99,102,241,0.6)' },
+            { label: '후반', data: [comp.secondHalf.sessions, comp.secondHalf.memos, comp.secondHalf.jobs], backgroundColor: 'rgba(139,92,246,0.6)' }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: '#6b7280', font: { size: 10 } }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { color: '#6b7280', font: { size: 9 }, stepSize: 1 }, grid: { color: 'rgba(55,65,81,0.3)' } }
+          },
+          plugins: { legend: { labels: { color: '#9ca3af', font: { size: 10 }, boxWidth: 12 } } }
+        }
+      });
+    }
+
+    // --- 하루 시작 ---
+    function formatDateLabel(dateStr) {
+      const d = new Date(dateStr + 'T00:00:00');
+      const days = ['일', '월', '화', '수', '목', '금', '토'];
+      return `${d.getMonth()+1}/${d.getDate()} (${days[d.getDay()]})`;
+    }
+
+    function shiftAnalysisMorningDate(delta) {
+      const d = new Date(analysisMorningDate + 'T00:00:00');
+      d.setDate(d.getDate() + delta);
+      analysisMorningDate = getKSTDateString(d);
+      loadMorningPlanDetail(analysisMorningDate);
+    }
+
+    function resetAnalysisMorningDate() {
+      analysisMorningDate = getKSTDateString();
+      loadMorningPlanDetail(analysisMorningDate);
+    }
+
+    async function loadAnalysisMorning() {
+      // 목록
+      try {
+        const res = await fetch(`${API_BASE}/api/morning-plans?limit=50`);
+        const data = await res.json();
+        const plans = data.plans || [];
+        const listEl = document.getElementById('morningPlanList');
+        if (plans.length === 0) {
+          listEl.innerHTML = '<div class="text-xs text-gray-500 text-center py-4">기록 없음</div>';
+        } else {
+          listEl.innerHTML = plans.map(p => `
+            <button onclick="selectMorningPlan('${p.date}')"
+              class="morning-plan-item w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-gray-700/50 transition-colors ${p.date === analysisMorningDate ? 'bg-blue-900/30 text-blue-400 border border-blue-700/50' : 'text-gray-400'}">
+              ${formatDateLabel(p.date)} <span class="text-green-500 text-xs">●</span>
+            </button>
+          `).join('');
+        }
+      } catch (err) { console.error('모닝 플랜 목록 로드 실패:', err); }
+
+      // 상세
+      loadMorningPlanDetail(analysisMorningDate);
+    }
+
+    function selectMorningPlan(date) {
+      analysisMorningDate = date;
+      // 하이라이트 업데이트
+      document.querySelectorAll('.morning-plan-item').forEach(btn => {
+        const isActive = btn.getAttribute('onclick').includes(`'${date}'`);
+        btn.classList.toggle('bg-blue-900/30', isActive);
+        btn.classList.toggle('text-blue-400', isActive);
+        btn.classList.toggle('border', isActive);
+        btn.classList.toggle('border-blue-700/50', isActive);
+        btn.classList.toggle('text-gray-400', !isActive);
+      });
+      loadMorningPlanDetail(date);
+    }
+
+    async function loadMorningPlanDetail(date) {
+      document.getElementById('analysisMorningDateLabel').textContent = formatDateLabel(date);
+      const detailEl = document.getElementById('morningPlanDetail');
+      try {
+        const res = await fetch(`${API_BASE}/api/morning-plan?date=${date}`);
+        const data = await res.json();
+        if (data.plan && data.plan.markdown) {
+          const html = typeof marked !== 'undefined' ? marked.parse(data.plan.markdown) : data.plan.markdown.replace(/\n/g, '<br>');
+          detailEl.innerHTML = `
+            <div class="markdown-content">${html}</div>
+            <div class="mt-4 flex gap-2">
+              <button onclick="openMorningStart()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">✏️ 수정</button>
+            </div>
+          `;
+        } else {
+          detailEl.innerHTML = `
+            <div class="text-center py-16">
+              <div class="text-4xl mb-3">☀️</div>
+              <div class="text-gray-500 mb-4">${formatDateLabel(date)}의 플랜이 없습니다</div>
+              <button onclick="openMorningStart()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium">☀️ 하루 시작하기</button>
+            </div>
+          `;
+        }
+      } catch (err) {
+        detailEl.innerHTML = '<div class="text-center text-red-400 py-8">로드 실패</div>';
+      }
+    }
+
+    // --- 오늘 보고서 ---
+    async function loadAnalysisReport() {
+      try {
+        const res = await fetch(`${API_BASE}/api/reports/daily?limit=100`);
+        const data = await res.json();
+        const reports = data.reports || [];
+        const listEl = document.getElementById('reportList');
+        if (reports.length === 0) {
+          listEl.innerHTML = '<div class="text-xs text-gray-500 text-center py-4">기록 없음</div>';
+        } else {
+          const typeIcons = { 'day-wrapup': '🌙', 'daily-report': '📊', 'full-daily-report': '📊' };
+          const typeLabels = { 'day-wrapup': '하루마무리', 'daily-report': '일일보고서', 'full-daily-report': '종합보고서' };
+          listEl.innerHTML = reports.map(r => `
+            <button onclick="selectReport('${r.date}', '${r.type}')" data-date="${r.date}" data-type="${r.type}"
+              class="report-list-item w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-gray-700/50 transition-colors text-gray-400">
+              <div>${formatDateLabel(r.date)}</div>
+              <div class="text-xs text-gray-500">${typeIcons[r.type] || '📝'} ${typeLabels[r.type] || r.type}</div>
+            </button>
+          `).join('');
+        }
+      } catch (err) { console.error('보고서 목록 로드 실패:', err); }
+
+      // 초기 상태
+      document.getElementById('reportDetail').innerHTML = `
+        <div class="text-center py-16">
+          <div class="text-4xl mb-3">📊</div>
+          <div class="text-gray-500 mb-4">보고서를 선택하거나 새로 생성하세요</div>
+          <button onclick="generateTodayFullReport()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-medium">✨ 오늘 보고서 생성</button>
+        </div>`;
+      document.getElementById('reportActions').classList.add('hidden');
+    }
+
+    async function selectReport(date, type) {
+      // 하이라이트
+      document.querySelectorAll('.report-list-item').forEach(btn => {
+        const isActive = btn.dataset.date === date && btn.dataset.type === type;
+        btn.classList.toggle('bg-blue-900/30', isActive);
+        btn.classList.toggle('text-blue-400', isActive);
+        btn.classList.toggle('border', isActive);
+        btn.classList.toggle('border-blue-700/50', isActive);
+        btn.classList.toggle('text-gray-400', !isActive);
+      });
+
+      const detailEl = document.getElementById('reportDetail');
+      try {
+        const res = await fetch(`${API_BASE}/api/reports/daily?date=${date}&type=${type}`);
+        const data = await res.json();
+        const reportMd = data.report?.markdown || data.report?.report;
+        if (data.report && reportMd) {
+          selectedReportData = { ...data.report, markdown: reportMd };
+          const html = typeof marked !== 'undefined' ? marked.parse(reportMd) : reportMd.replace(/\n/g, '<br>');
+          const typeIcons = { 'day-wrapup': '🌙', 'daily-report': '📊', 'full-daily-report': '📊' };
+          const typeLabels = { 'day-wrapup': '하루마무리', 'daily-report': '일일보고서', 'full-daily-report': '종합보고서' };
+          detailEl.innerHTML = `
+            <div class="flex items-center gap-2 mb-4">
+              <span class="px-2 py-0.5 bg-gray-700 rounded text-xs">${typeIcons[type] || '📝'} ${typeLabels[type] || type}</span>
+              <span class="text-xs text-gray-500">${formatDateLabel(date)}</span>
+            </div>
+            <div class="markdown-content">${html}</div>
+          `;
+          document.getElementById('reportActions').classList.remove('hidden');
+        } else {
+          selectedReportData = null;
+          detailEl.innerHTML = '<div class="text-center text-gray-500 py-12">보고서 내용이 없습니다</div>';
+          document.getElementById('reportActions').classList.add('hidden');
+        }
+      } catch (err) {
+        detailEl.innerHTML = '<div class="text-center text-red-400 py-8">로드 실패</div>';
+      }
+    }
+
+    function copyReportToClipboard() {
+      if (selectedReportData?.markdown) {
+        navigator.clipboard.writeText(selectedReportData.markdown).then(() => showToast('클립보드에 복사됨', 'success'));
+      }
+    }
+
+    function downloadReport() {
+      if (!selectedReportData?.markdown) return;
+      const blob = new Blob([selectedReportData.markdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-${selectedReportData.date}-${selectedReportData.type}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // --- 주간 분석 ---
+    async function loadAnalysisWeekly() {
+      try {
+        const res = await fetch(`${API_BASE}/api/insights/weekly-digest?limit=50`);
+        const data = await res.json();
+        const digests = data.digests || [];
+        const listEl = document.getElementById('weeklyDigestList');
+        if (digests.length === 0) {
+          listEl.innerHTML = '<div class="text-xs text-gray-500 text-center py-4">기록 없음</div>';
+        } else {
+          listEl.innerHTML = digests.map(d => `
+            <button onclick="selectWeeklyDigest('${d.weekStart}')" data-week="${d.weekStart}"
+              class="weekly-list-item w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-gray-700/50 transition-colors text-gray-400">
+              <div>${d.weekStart} ~ ${d.weekEnd}</div>
+              <div class="text-xs text-gray-500">✓ 생성됨</div>
+            </button>
+          `).join('');
+        }
+      } catch (err) { console.error('주간 다이제스트 목록 로드 실패:', err); }
+
+      // 빈 상태
+      document.getElementById('weeklyDigestStats').style.display = 'none';
+      document.getElementById('weeklyDigestDetail').innerHTML = `
+        <div class="text-center py-16">
+          <div class="text-4xl mb-3">📈</div>
+          <div class="text-gray-500 mb-4">다이제스트를 선택하거나 새로 생성하세요</div>
+          <button onclick="generateWeeklyDigest()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-medium">✨ 이번 주 다이제스트 생성</button>
+        </div>
+      `;
+      document.getElementById('weeklyActions').classList.add('hidden');
+    }
+
+    async function selectWeeklyDigest(weekStart) {
+      // 하이라이트
+      document.querySelectorAll('.weekly-list-item').forEach(btn => {
+        const isActive = btn.dataset.week === weekStart;
+        btn.classList.toggle('bg-blue-900/30', isActive);
+        btn.classList.toggle('text-blue-400', isActive);
+        btn.classList.toggle('border', isActive);
+        btn.classList.toggle('border-blue-700/50', isActive);
+        btn.classList.toggle('text-gray-400', !isActive);
+      });
+
+      try {
+        const res = await fetch(`${API_BASE}/api/insights/weekly-digest?week=${weekStart}`);
+        const data = await res.json();
+        if (data.digest) {
+          selectedWeeklyData = data.digest;
+          const stats = data.digest.stats || {};
+          document.getElementById('wdStatSessions').textContent = stats.sessions || 0;
+          document.getElementById('wdStatJobs').textContent = stats.jobRuns || 0;
+          document.getElementById('wdStatMemos').textContent = stats.memos || 0;
+          document.getElementById('wdStatSuccess').textContent = (stats.successRate || 0) + '%';
+          document.getElementById('weeklyDigestStats').style.display = '';
+
+          const md = data.digest.markdown || '(내용 없음)';
+          const html = typeof marked !== 'undefined' ? marked.parse(md) : md.replace(/\n/g, '<br>');
+          document.getElementById('weeklyDigestDetail').innerHTML = `<div class="markdown-content">${html}</div>`;
+          document.getElementById('weeklyActions').classList.remove('hidden');
+        } else {
+          selectedWeeklyData = null;
+          document.getElementById('weeklyDigestStats').style.display = 'none';
+          document.getElementById('weeklyDigestDetail').innerHTML = '<div class="text-center text-gray-500 py-12">다이제스트가 없습니다</div>';
+          document.getElementById('weeklyActions').classList.add('hidden');
+        }
+      } catch (err) {
+        document.getElementById('weeklyDigestDetail').innerHTML = '<div class="text-center text-red-400 py-8">로드 실패</div>';
+      }
+    }
+
+    function copyWeeklyToClipboard() {
+      if (selectedWeeklyData?.markdown) {
+        navigator.clipboard.writeText(selectedWeeklyData.markdown).then(() => showToast('클립보드에 복사됨', 'success'));
+      }
     }
 
     // ============ 통합 타임라인 ============
