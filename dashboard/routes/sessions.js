@@ -38,6 +38,78 @@ router.get('/projects', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Knowledge graph (must be before /:id wildcard route)
+router.get('/knowledge-graph', (req, res) => {
+  let graph = loadKnowledgeGraphData();
+  const minMentions = parseInt(req.query.minMentions || '1');
+  if (req.query.rebuild === 'true') graph = rebuildKnowledgeGraph();
+  if (minMentions > 1) {
+    const nodeIds = new Set(graph.nodes.filter(n => n.mentions >= minMentions).map(n => n.id));
+    graph = { ...graph, nodes: graph.nodes.filter(n => nodeIds.has(n.id)), edges: graph.edges.filter(e => nodeIds.has(e.from) && nodeIds.has(e.to)) };
+  }
+  res.json(graph);
+});
+
+router.post('/knowledge-graph/rebuild', (req, res) => {
+  try {
+    const graph = rebuildKnowledgeGraph();
+    res.json({ success: true, nodes: graph.nodes.length, edges: graph.edges.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/knowledge-graph/recommendations', (req, res) => {
+  const { topic } = req.query;
+  if (!topic) return res.status(400).json({ error: 'topic parameter required' });
+  const graph = loadKnowledgeGraphData();
+  const topicId = `topic-${topic.toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-')}`;
+  const relatedEdges = graph.edges.filter(e => e.from === topicId || e.to === topicId).sort((a, b) => b.strength - a.strength);
+  const related = relatedEdges.slice(0, 5).map(e => {
+    const otherId = e.from === topicId ? e.to : e.from;
+    const node = graph.nodes.find(n => n.id === otherId);
+    return { topic: node?.label || otherId, reason: `${e.strength}회 함께 언급됨`, strength: e.strength };
+  });
+  const cutoffDate = new Date(); cutoffDate.setDate(cutoffDate.getDate() - 60);
+  const cutoff = state.getKSTDateString(cutoffDate);
+  const reviewNeeded = graph.nodes.filter(n => n.lastSeen < cutoff && n.mentions >= 3)
+    .sort((a, b) => a.lastSeen.localeCompare(b.lastSeen)).slice(0, 3)
+    .map(n => ({ topic: n.label, lastSeen: n.lastSeen, reason: `${n.mentions}회 학습, 복습 추천` }));
+  res.json({ related, review_needed: reviewNeeded });
+});
+
+// Insights overview (must be before /:id wildcard route)
+router.get('/insights/overview', (req, res) => {
+  const days = parseInt(req.query.days || '7');
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  const cutoff = cutoffDate.toISOString();
+  const allInsights = loadSessionInsights();
+  const recentInsights = Object.entries(allInsights)
+    .filter(([_, ins]) => ins.createdAt >= cutoff)
+    .map(([sessionId, ins]) => ({ sessionId, ...ins }));
+  const topicCount = {}, techCount = {}, complexity = { low: 0, medium: 0, high: 0 };
+  recentInsights.forEach(ins => {
+    (ins.topics || []).forEach(t => { topicCount[t] = (topicCount[t] || 0) + 1; });
+    (ins.technologies || []).forEach(t => { techCount[t] = (techCount[t] || 0) + 1; });
+    if (ins.complexity) complexity[ins.complexity]++;
+  });
+  const topTopics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([topic, count]) => ({ topic, count }));
+  const topTech = Object.entries(techCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([tech, count]) => ({ tech, count }));
+  res.json({ period: `${days} days`, sessionsAnalyzed: recentInsights.length, topTopics, topTechnologies: topTech, complexityDistribution: complexity });
+});
+
+// Cached daily reports (must be before /:id wildcard route)
+router.get('/reports/daily', (req, res) => {
+  const { date, type } = req.query;
+  const reports = loadDailyReports();
+  if (date && type) {
+    const report = reports.find(r => r.date === date && r.type === type);
+    return res.json({ report: report || null });
+  }
+  const limit = parseInt(req.query.limit) || 50;
+  const list = reports.map(r => ({ id: r.id, date: r.date, type: r.type, createdAt: r.createdAt })).reverse().slice(0, limit);
+  res.json({ reports: list });
+});
+
 // Session detail
 router.get('/:id', (req, res) => {
   const { project, maxMessages } = req.query;
@@ -207,19 +279,6 @@ router.post('/export-all', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Cached daily reports
-router.get('/reports/daily', (req, res) => {
-  const { date, type } = req.query;
-  const reports = loadDailyReports();
-  if (date && type) {
-    const report = reports.find(r => r.date === date && r.type === type);
-    return res.json({ report: report || null });
-  }
-  const limit = parseInt(req.query.limit) || 50;
-  const list = reports.map(r => ({ id: r.id, date: r.date, type: r.type, createdAt: r.createdAt })).reverse().slice(0, limit);
-  res.json({ reports: list });
-});
-
 // Session insights
 router.get('/:id/insights', (req, res) => {
   const { id } = req.params;
@@ -238,65 +297,6 @@ router.get('/:id/insights', (req, res) => {
   state.taskQueue.set(task.id, task);
   tasksRouter.processTask(task);
   res.json({ taskId: task.id, status: 'generating' });
-});
-
-// Insights overview
-router.get('/insights/overview', (req, res) => {
-  const days = parseInt(req.query.days || '7');
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - days);
-  const cutoff = cutoffDate.toISOString();
-  const allInsights = loadSessionInsights();
-  const recentInsights = Object.entries(allInsights)
-    .filter(([_, ins]) => ins.createdAt >= cutoff)
-    .map(([sessionId, ins]) => ({ sessionId, ...ins }));
-  const topicCount = {}, techCount = {}, complexity = { low: 0, medium: 0, high: 0 };
-  recentInsights.forEach(ins => {
-    (ins.topics || []).forEach(t => { topicCount[t] = (topicCount[t] || 0) + 1; });
-    (ins.technologies || []).forEach(t => { techCount[t] = (techCount[t] || 0) + 1; });
-    if (ins.complexity) complexity[ins.complexity]++;
-  });
-  const topTopics = Object.entries(topicCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([topic, count]) => ({ topic, count }));
-  const topTech = Object.entries(techCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([tech, count]) => ({ tech, count }));
-  res.json({ period: `${days} days`, sessionsAnalyzed: recentInsights.length, topTopics, topTechnologies: topTech, complexityDistribution: complexity });
-});
-
-// Knowledge graph
-router.get('/knowledge-graph', (req, res) => {
-  let graph = loadKnowledgeGraphData();
-  const minMentions = parseInt(req.query.minMentions || '1');
-  if (req.query.rebuild === 'true') graph = rebuildKnowledgeGraph();
-  if (minMentions > 1) {
-    const nodeIds = new Set(graph.nodes.filter(n => n.mentions >= minMentions).map(n => n.id));
-    graph = { ...graph, nodes: graph.nodes.filter(n => nodeIds.has(n.id)), edges: graph.edges.filter(e => nodeIds.has(e.from) && nodeIds.has(e.to)) };
-  }
-  res.json(graph);
-});
-
-router.post('/knowledge-graph/rebuild', (req, res) => {
-  try {
-    const graph = rebuildKnowledgeGraph();
-    res.json({ success: true, nodes: graph.nodes.length, edges: graph.edges.length });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-router.get('/knowledge-graph/recommendations', (req, res) => {
-  const { topic } = req.query;
-  if (!topic) return res.status(400).json({ error: 'topic parameter required' });
-  const graph = loadKnowledgeGraphData();
-  const topicId = `topic-${topic.toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-')}`;
-  const relatedEdges = graph.edges.filter(e => e.from === topicId || e.to === topicId).sort((a, b) => b.strength - a.strength);
-  const related = relatedEdges.slice(0, 5).map(e => {
-    const otherId = e.from === topicId ? e.to : e.from;
-    const node = graph.nodes.find(n => n.id === otherId);
-    return { topic: node?.label || otherId, reason: `${e.strength}회 함께 언급됨`, strength: e.strength };
-  });
-  const cutoffDate = new Date(); cutoffDate.setDate(cutoffDate.getDate() - 60);
-  const cutoff = state.getKSTDateString(cutoffDate);
-  const reviewNeeded = graph.nodes.filter(n => n.lastSeen < cutoff && n.mentions >= 3)
-    .sort((a, b) => a.lastSeen.localeCompare(b.lastSeen)).slice(0, 3)
-    .map(n => ({ topic: n.label, lastSeen: n.lastSeen, reason: `${n.mentions}회 학습, 복습 추천` }));
-  res.json({ related, review_needed: reviewNeeded });
 });
 
 module.exports = router;
