@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#111827"/>
+  <rect x="40" y="40" width="432" height="432" rx="64" fill="#1f2937" stroke="#374151" stroke-width="4"/>
+  <circle cx="256" cy="200" r="80" fill="#3b82f6" opacity="0.9"/>
+  <circle cx="256" cy="200" r="50" fill="#1f2937"/>
+  <circle cx="256" cy="200" r="20" fill="#60a5fa"/>
+  <rect x="120" y="320" width="80" height="100" rx="8" fill="#22c55e" opacity="0.8"/>
+  <rect x="216" y="290" width="80" height="130" rx="8" fill="#3b82f6" opacity="0.8"/>
+  <rect x="312" y="350" width="80" height="70" rx="8" fill="#a855f7" opacity="0.8"/>
+  <text x="256" y="480" text-anchor="middle" font-family="system-ui" font-size="36" font-weight="700" fill="#9ca3af">AI Pipeline</text>
+</svg>
