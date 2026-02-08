@@ -210,16 +210,23 @@ dashboard/
 | 4 | AI 심화 (메모 분류, 세션 인사이트, 지식 그래프) | `spec-phase4-ai-deep-integration.md` | P2-P3 |
 | 5 | 플랫폼 확장 (모바일, 위젯, 서버 모듈화) | `spec-phase5-platform-extension.md` | P3-P4 |
 
-**구현 완료**: Phase 1 전체 + Phase 2 전체 + Phase 4 전체
+**구현 완료**: Phase 1 전체 + Phase 2 전체 + Phase 3 전체 + Phase 4 전체 + Phase 5 전체
 - 1.1 통합 타임라인 (`GET /api/timeline` + 접기/펼치기 + 시간 범위 슬라이더 + 타입 필터)
 - 1.2 통합 검색 (`GET /api/search` + Cmd+K 모달 + 키보드 네비게이션)
 - 1.3 날짜 네비게이션 (홈 탭 날짜 선택기 + 전체 데이터 날짜 연동)
 - 2.1 주간 다이제스트 (`POST/GET /api/insights/weekly-digest` + Claude CLI 분석 + Obsidian WEEKLY/ 저장)
 - 2.2 생산성 분석 (`GET /api/insights/productivity` + 히트맵/도넛/트렌드/비교 차트)
 - 2.3 스마트 서제스션 (`GET /api/insights/suggestions` + 규칙 기반 5가지 제안 + localStorage 24시간 dismiss)
+- 3.1 조건부 파이프라인 (Edge 조건 6가지: onSuccess/onFailure/always/onOutput/onExitCode + 그래프 색상)
+- 3.2 알림 채널 확장 (Slack/Discord/Native + 규칙 기반 라우팅 + 테스트 알림)
+- 3.3 외부 트리거 (`POST /api/webhook/:token` + 토큰 CRUD + allowedJobs 보안)
+- 3.4 스마트 스케줄링 (간편/Cron 모드 전환 + 빈도 선택기 + 다음 실행 표시)
 - 4.1 메모 자동 분류 (키워드 Tier1 + Claude Tier2, `PATCH /api/quick-memos/:id/category`, 카테고리 필터, SSE 실시간 갱신)
 - 4.2 세션 인사이트 (`GET /api/sessions/:id/insights` + Claude CLI 분석 + 세션 모달 인사이트 탭)
 - 4.3 지식 그래프 (`GET /api/knowledge-graph` + vis-network 시각화 + 토픽 추천, 세션 탭 서브탭)
 - 4.4 코드 리뷰 분석 (`POST/GET /api/github/review-analysis` + Claude 패턴 분석 + 체크리스트)
+- 5.1 반응형 모바일 UI + PWA
+- 5.2 위젯 시스템
+- 5.3 서버 모듈화 (6,000줄 → 132줄 entry + routes/ + lib/)
 
-**다음 작업**: Phase 3 자동화 고도화 (`spec-phase3-advanced-automation.md` 참조) / Phase 5 플랫폼 확장
+**전체 로드맵 구현 완료** (Phase 1-5)
