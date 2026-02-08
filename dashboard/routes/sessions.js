@@ -106,7 +106,11 @@ router.get('/reports/daily', (req, res) => {
     return res.json({ report: report || null });
   }
   const limit = parseInt(req.query.limit) || 50;
-  const list = reports.map(r => ({ id: r.id, date: r.date, type: r.type, createdAt: r.createdAt })).reverse().slice(0, limit);
+  let filtered = reports;
+  if (date) {
+    filtered = reports.filter(r => r.date === date);
+  }
+  const list = filtered.map(r => ({ id: r.id, date: r.date, type: r.type, createdAt: r.createdAt })).reverse().slice(0, limit);
   res.json({ reports: list });
 });
 

@@ -6426,7 +6426,7 @@
       try {
         const cacheRes = await fetch(`${API_BASE}/api/reports/daily?date=${today}`);
         const cacheData = await cacheRes.json();
-        const cachedReports = cacheData.reports || [];
+        const cachedReports = (cacheData.reports || []).filter(r => r.date === today);
 
         if (cachedReports.length > 0) {
           const priority = ['day-wrapup', 'full-daily-report', 'daily-report'];
