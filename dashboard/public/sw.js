@@ -1,12 +1,10 @@
-const CACHE_NAME = 'ai-pipeline-v1';
+const CACHE_NAME = 'ai-pipeline-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/icons/icon.svg'
 ];
 
-// Install - cache static assets
+// Install - cache static assets (skip HTML - use network-first)
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -26,7 +24,7 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Fetch - network first for API, cache first for static
+// Fetch strategy
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
@@ -35,7 +33,21 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Static assets: cache first, then network
+  // HTML pages (navigation): network first, cache fallback
+  if (event.request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(event.request) || caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // Other static assets: cache first, then network
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
@@ -47,7 +59,6 @@ self.addEventListener('fetch', event => {
         return response;
       });
     }).catch(() => {
-      // Offline fallback
       if (event.request.mode === 'navigate') {
         return caches.match('/index.html');
       }

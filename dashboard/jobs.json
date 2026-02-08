@@ -1,64 +1,6 @@
 {
   "jobs": [
     {
-      "id": "sync-github",
-      "name": "GitHub 동기화",
-      "description": "로컬 git 커밋을 Daily Note에 기록",
-      "command": "python scripts/sync_github.py",
-      "schedule": "20 23 * * *",
-      "enabled": true,
-      "category": "sync",
-      "tags": [
-        "github",
-        "daily"
-      ],
-      "options": [
-        {
-          "flag": "--today",
-          "label": "오늘 활동",
-          "description": "어제가 아닌 오늘 활동 동기화",
-          "type": "boolean",
-          "default": false
-        },
-        {
-          "flag": "--yes",
-          "label": "자동 승인",
-          "description": "확인 없이 Daily Note에 자동 추가",
-          "type": "boolean",
-          "default": true
-        },
-        {
-          "arg": "date",
-          "label": "특정 날짜",
-          "description": "동기화할 날짜 (YYYY-MM-DD)",
-          "type": "string",
-          "placeholder": "2026-01-30",
-          "default": ""
-        },
-        {
-          "arg": "repos",
-          "flag": "--repos",
-          "label": "저장소 경로",
-          "description": "로컬 저장소 경로 (미지정 시 설정 파일)",
-          "type": "array",
-          "placeholder": "경로 입력 후 Enter",
-          "default": []
-        },
-        {
-          "flag": "--slack",
-          "label": "Slack 알림",
-          "description": "완료/실패 시 Slack으로 알림 전송",
-          "type": "boolean",
-          "default": false,
-          "system": true
-        }
-      ],
-      "position": {
-        "x": -183,
-        "y": -225
-      }
-    },
-    {
       "id": "sync-jira",
       "name": "JIRA 동기화",
       "description": "JIRA 활동을 Daily Note에 기록",
@@ -113,90 +55,6 @@
       "position": {
         "x": -394,
         "y": -148
-      }
-    },
-    {
-      "id": "daily-init",
-      "name": "Daily Note 생성",
-      "description": "아침에 오늘 Daily Note 템플릿 생성",
-      "command": "python scripts/daily.py --init",
-      "schedule": "30 10 * * 1-5",
-      "enabled": true,
-      "category": "daily",
-      "tags": [
-        "obsidian",
-        "template"
-      ],
-      "options": [
-        {
-          "flag": "--yes",
-          "label": "자동 승인",
-          "description": "이미 존재하는 경우 건너뛰기 (덮어쓰기 X)",
-          "type": "boolean",
-          "default": true
-        },
-        {
-          "arg": "date",
-          "label": "특정 날짜",
-          "description": "생성할 날짜 (YYYY-MM-DD)",
-          "type": "string",
-          "placeholder": "2026-01-31",
-          "default": ""
-        },
-        {
-          "flag": "--slack",
-          "label": "Slack 알림",
-          "description": "완료/실패 시 Slack으로 알림 전송",
-          "type": "boolean",
-          "default": false,
-          "system": true
-        }
-      ],
-      "position": {
-        "x": -295,
-        "y": -329
-      }
-    },
-    {
-      "id": "daily-update",
-      "name": "Daily Note 갱신",
-      "description": "오늘의 학습 내용을 Daily Note에 추가",
-      "command": "python scripts/daily.py",
-      "schedule": "30 23 * * 1-5",
-      "enabled": true,
-      "category": "daily",
-      "tags": [
-        "obsidian",
-        "learning"
-      ],
-      "options": [
-        {
-          "flag": "--yes",
-          "label": "자동 승인",
-          "description": "확인 없이 Daily Note에 자동 추가",
-          "type": "boolean",
-          "default": true
-        },
-        {
-          "arg": "date",
-          "label": "특정 날짜",
-          "description": "갱신할 날짜 (YYYY-MM-DD)",
-          "type": "string",
-          "placeholder": "2026-01-31",
-          "default": ""
-        },
-        {
-          "flag": "--slack",
-          "label": "Slack 알림",
-          "description": "완료/실패 시 Slack으로 알림 전송",
-          "type": "boolean",
-          "default": true,
-          "system": true
-        }
-      ],
-      "position": {
-        "x": 149,
-        "y": -324
       }
     },
     {
@@ -400,113 +258,6 @@
       }
     },
     {
-      "id": "my-pr-status",
-      "name": "내 PR 상태",
-      "description": "내가 올린 PR 상태를 Daily Note에 기록",
-      "command": "python scripts/my_pr_status.py",
-      "schedule": "0 18 * * 1-5",
-      "enabled": false,
-      "category": "sync",
-      "tags": [
-        "github",
-        "pr",
-        "daily"
-      ],
-      "options": [
-        {
-          "arg": "repos",
-          "flag": "--repos",
-          "label": "저장소 목록",
-          "description": "GitHub 저장소 (owner/repo)",
-          "type": "array",
-          "placeholder": "owner/repo 입력 후 Enter",
-          "default": []
-        },
-        {
-          "arg": "state",
-          "flag": "--state",
-          "label": "PR 상태",
-          "description": "조회할 PR 상태",
-          "type": "select",
-          "choices": [
-            "all",
-            "open",
-            "merged",
-            "closed"
-          ],
-          "default": "all"
-        },
-        {
-          "flag": "--yes",
-          "label": "자동 추가",
-          "description": "확인 없이 Daily Note에 자동 추가",
-          "type": "boolean",
-          "default": true
-        },
-        {
-          "flag": "--slack",
-          "label": "Slack 알림",
-          "description": "완료/실패 시 Slack으로 알림 전송",
-          "type": "boolean",
-          "default": false,
-          "system": true
-        }
-      ],
-      "position": {
-        "x": -46,
-        "y": -50
-      }
-    },
-    {
-      "id": "claude-session-summary",
-      "name": "Claude 세션 요약",
-      "description": "오늘 Claude Code 세션의 학습 내용 요약",
-      "command": "python scripts/claude_session_summary.py",
-      "schedule": "0 23 * * 1-5",
-      "enabled": false,
-      "category": "daily",
-      "tags": [
-        "claude",
-        "learning",
-        "daily"
-      ],
-      "options": [
-        {
-          "arg": "date",
-          "flag": "--date",
-          "label": "날짜",
-          "description": "조회할 날짜 (YYYY-MM-DD, 기본: 오늘)",
-          "type": "string",
-          "placeholder": "2026-01-31",
-          "default": ""
-        },
-        {
-          "arg": "projects",
-          "flag": "--projects",
-          "label": "프로젝트 필터",
-          "description": "프로젝트 이름 필터",
-          "type": "array",
-          "placeholder": "프로젝트명 입력 후 Enter",
-          "default": []
-        },
-        {
-          "flag": "--yes",
-          "label": "자동 추가",
-          "description": "확인 없이 Daily Note에 자동 추가",
-          "type": "boolean",
-          "default": true
-        },
-        {
-          "flag": "--slack",
-          "label": "Slack 알림",
-          "description": "완료/실패 시 Slack으로 알림 전송",
-          "type": "boolean",
-          "default": false,
-          "system": true
-        }
-      ]
-    },
-    {
       "id": "browser-links",
       "name": "브라우저 링크 정리",
       "description": "브라우저 열린 탭을 Obsidian에 저장",
@@ -636,8 +387,8 @@
       "name": "Git 브랜치 정리",
       "description": "머지된 로컬 브랜치 정리",
       "command": "python scripts/git_cleanup.py",
-      "schedule": "0 9 * * 1",
-      "enabled": false,
+      "schedule": "30 10 * * 1",
+      "enabled": true,
       "category": "maintenance",
       "tags": [
         "git",
@@ -651,31 +402,40 @@
           "description": "저장소 경로 (미지정 시 설정 파일)",
           "type": "array",
           "placeholder": "경로 입력 후 Enter",
-          "default": []
+          "default": [
+            "~/Projects/my-project"
+          ]
         },
         {
           "flag": "--dry-run",
           "label": "미리보기",
           "description": "실제 삭제 없이 미리보기만",
           "type": "boolean",
-          "default": false
+          "default": true
         },
         {
           "flag": "--yes",
           "label": "자동 삭제",
           "description": "확인 없이 브랜치 삭제",
           "type": "boolean",
-          "default": false
+          "default": true
         },
         {
           "flag": "--slack",
           "label": "Slack 알림",
           "description": "완료/실패 시 Slack으로 알림 전송",
           "type": "boolean",
-          "default": false,
+          "default": true,
           "system": true
         }
-      ]
+      ],
+      "notes": "",
+      "execution": {
+        "timeout": 300000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
     },
     {
       "id": "temp-cleanup",
@@ -868,44 +628,12 @@
       ]
     },
     {
-      "id": "daily-summary",
-      "name": "일간 작업 요약",
-      "description": "하루 Cron 작업 실행 결과를 Slack으로 전송",
-      "command": "python scripts/daily_summary.py",
-      "schedule": "0 23 * * *",
-      "enabled": false,
-      "category": "monitor",
-      "tags": [
-        "summary",
-        "slack",
-        "daily"
-      ],
-      "options": [
-        {
-          "arg": "date",
-          "flag": "--date",
-          "label": "날짜",
-          "description": "요약할 날짜 (YYYY-MM-DD, 기본: 오늘)",
-          "type": "string",
-          "placeholder": "2026-01-31",
-          "default": ""
-        },
-        {
-          "flag": "--slack",
-          "label": "Slack 전송",
-          "description": "Slack으로 요약 전송",
-          "type": "boolean",
-          "default": true
-        }
-      ]
-    },
-    {
       "id": "hourly-checkin",
       "name": "시간별 기록",
       "description": "매시간 지금 하고 있는 일 기록",
       "interactive": true,
       "schedule": "6 * * * *",
-      "enabled": true,
+      "enabled": false,
       "category": "interactive",
       "tags": [
         "interactive",
@@ -949,124 +677,6 @@
         "backoff": "fixed"
       },
       "options": []
-    },
-    {
-      "id": "morning-standup",
-      "name": "아침 스탠드업",
-      "description": "아침에 오늘 집중할 일 기록",
-      "interactive": true,
-      "schedule": "0 9 * * 1-5",
-      "enabled": true,
-      "category": "interactive",
-      "tags": [
-        "interactive",
-        "daily",
-        "focus"
-      ],
-      "popup": {
-        "character": "asking",
-        "prompts": [
-          "좋은 아침이에요! 오늘 집중할 일은 뭔가요? ☀️",
-          "오늘 하루 뭘 하면 뿌듯할까요?"
-        ],
-        "placeholder": "오늘의 목표를 적어주세요...",
-        "inputType": "textarea",
-        "reminderMinutes": 10,
-        "maxReminders": 1
-      },
-      "processing": {
-        "claude": {
-          "enabled": true,
-          "prompt": "아침 스탠드업 내용을 Daily Note Focus 섹션에 맞게 정리해주세요. 핵심 목표 1-2개로 요약."
-        }
-      },
-      "output": {
-        "target": "obsidian-daily",
-        "section": "## 🎯 오늘의 Focus",
-        "format": "{content}"
-      }
-    },
-    {
-      "id": "evening-checkin",
-      "name": "퇴근 체크인",
-      "description": "퇴근 전 오늘 하루 정리",
-      "interactive": true,
-      "schedule": "0 18 * * 1-5",
-      "enabled": true,
-      "category": "interactive",
-      "tags": [
-        "interactive",
-        "daily",
-        "review"
-      ],
-      "popup": {
-        "character": "happy",
-        "prompts": [
-          "오늘 하루 수고했어요! 어땠나요? 🌙",
-          "퇴근 전에 잠깐, 오늘 뭘 했나요?"
-        ],
-        "placeholder": "오늘 한 일을 적어주세요...",
-        "inputType": "textarea",
-        "reminderMinutes": 15,
-        "maxReminders": 1
-      },
-      "processing": {
-        "claude": {
-          "enabled": true,
-          "prompt": "퇴근 체크인 내용을 Daily Note에 기록할 형태로 정리해주세요. 오늘 한 일 요약 형식으로."
-        }
-      },
-      "output": {
-        "target": "obsidian-daily",
-        "section": "## ✅ 오늘 한 일",
-        "format": "{content}"
-      }
-    },
-    {
-      "id": "daily-wrapup",
-      "name": "일일 정리",
-      "description": "하루 끝에 전체 기록 + Claude 세션 정리",
-      "interactive": true,
-      "schedule": "50 23 * * *",
-      "enabled": true,
-      "category": "interactive",
-      "tags": [
-        "interactive",
-        "daily",
-        "summary"
-      ],
-      "popup": {
-        "character": "happy",
-        "prompts": [
-          "오늘 하루 수고했어요! 정리해볼까요? 🌙"
-        ],
-        "inputType": "review",
-        "showCollectedData": true,
-        "allowEmpty": true
-      },
-      "collect": {
-        "todayEntries": true,
-        "claudeSessions": true
-      },
-      "processing": {
-        "claude": {
-          "enabled": true,
-          "prompt": "오늘 하루 기록을 정리해주세요. 요약 (불렛 3-5개) + 오늘의 인사이트 한 문장 + 하루 평가 (이모지 + 한 줄). 친근하고 따뜻한 톤으로."
-        }
-      },
-      "output": {
-        "target": "obsidian-daily",
-        "sections": [
-          {
-            "name": "## ✅ 오늘 한 일",
-            "type": "summary"
-          },
-          {
-            "name": "## 🤖 Claude 세션 요약",
-            "type": "sessions"
-          }
-        ]
-      }
     },
     {
       "id": "env-check",
@@ -1119,37 +729,6 @@
           "type": "string",
           "placeholder": "오늘 배운 것: ...",
           "default": ""
-        }
-      ]
-    },
-    {
-      "id": "ai-process",
-      "name": "AI 로그 처리",
-      "description": "AI 대화 로그를 정제하여 Obsidian에 저장",
-      "command": "python scripts/processor.py",
-      "schedule": "",
-      "enabled": true,
-      "category": "sync",
-      "tags": [
-        "ai",
-        "log",
-        "obsidian"
-      ],
-      "options": [
-        {
-          "arg": "file",
-          "label": "로그 파일",
-          "description": "처리할 AI 로그 파일 경로",
-          "type": "string",
-          "placeholder": "~/.ai-pipeline/raw/...",
-          "default": ""
-        },
-        {
-          "flag": "--yes",
-          "label": "자동 저장",
-          "description": "확인 없이 Obsidian에 저장",
-          "type": "boolean",
-          "default": true
         }
       ]
     },

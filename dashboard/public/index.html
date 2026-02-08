@@ -882,8 +882,32 @@
                 class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-mono text-sm">
               <p class="text-xs text-gray-500 mt-1">일일 노트 폴더명 (vault 기준 상대 경로)</p>
             </div>
-            <div class="p-3 bg-gray-700/30 rounded-lg">
-              <p class="text-xs text-gray-400">📂 세션 내보내기 저장 위치: <code class="text-gray-300" id="obsidianExportPreview">-</code></p>
+            <div>
+              <label class="block text-sm font-medium mb-1">하루 시작 폴더</label>
+              <input type="text" id="settingsObsidianMorningFolder" placeholder="Morning Plans"
+                oninput="updateObsidianPreview()"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-mono text-sm">
+              <p class="text-xs text-gray-500 mt-1">하루 시작 계획 내보내기 폴더 (vault 기준 상대 경로)</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">일일 보고서 폴더</label>
+              <input type="text" id="settingsObsidianReportFolder" placeholder="Daily Reports"
+                oninput="updateObsidianPreview()"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-mono text-sm">
+              <p class="text-xs text-gray-500 mt-1">오늘 보고서 내보내기 폴더 (vault 기준 상대 경로)</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1">주간 다이제스트 폴더</label>
+              <input type="text" id="settingsObsidianWeeklyFolder" placeholder="WEEKLY"
+                oninput="updateObsidianPreview()"
+                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 font-mono text-sm">
+              <p class="text-xs text-gray-500 mt-1">주간 분석 내보내기 폴더 (vault 기준 상대 경로)</p>
+            </div>
+            <div class="p-3 bg-gray-700/30 rounded-lg space-y-1">
+              <p class="text-xs text-gray-400">📂 세션 내보내기: <code class="text-gray-300" id="obsidianExportPreview">-</code></p>
+              <p class="text-xs text-gray-400">📂 하루 시작: <code class="text-gray-300" id="obsidianMorningPreview">-</code></p>
+              <p class="text-xs text-gray-400">📂 일일 보고서: <code class="text-gray-300" id="obsidianReportPreview">-</code></p>
+              <p class="text-xs text-gray-400">📂 주간 다이제스트: <code class="text-gray-300" id="obsidianWeeklyPreview">-</code></p>
             </div>
           </div>
         </div>
@@ -1234,11 +1258,18 @@
             <!-- 날짜 네비게이션 -->
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-lg font-bold">☀️ 하루 시작</h3>
-              <div class="flex items-center gap-1 bg-gray-800 rounded-lg px-1 py-1">
-                <button onclick="shiftAnalysisMorningDate(-1)" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">&lsaquo;</button>
-                <span id="analysisMorningDateLabel" class="px-3 py-1 text-sm text-gray-300 font-medium"></span>
-                <button onclick="shiftAnalysisMorningDate(1)" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">&rsaquo;</button>
-                <button onclick="resetAnalysisMorningDate()" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-xs ml-1">오늘</button>
+              <div class="flex items-center gap-2">
+                <div id="morningActions" class="flex gap-2 hidden">
+                  <button onclick="copyMorningToClipboard()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">📋 복사</button>
+                  <button onclick="downloadMorningPlan()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">💾 다운로드</button>
+                  <button onclick="exportMorningToObsidian()" class="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 rounded text-xs font-medium">📓 옵시디언</button>
+                </div>
+                <div class="flex items-center gap-1 bg-gray-800 rounded-lg px-1 py-1">
+                  <button onclick="shiftAnalysisMorningDate(-1)" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">&lsaquo;</button>
+                  <span id="analysisMorningDateLabel" class="px-3 py-1 text-sm text-gray-300 font-medium"></span>
+                  <button onclick="shiftAnalysisMorningDate(1)" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">&rsaquo;</button>
+                  <button onclick="resetAnalysisMorningDate()" class="px-2 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-xs ml-1">오늘</button>
+                </div>
               </div>
             </div>
             <div id="morningPlanDetail" class="prose prose-invert max-w-none text-sm">
@@ -1265,6 +1296,7 @@
               <div id="reportActions" class="flex gap-2 hidden">
                 <button onclick="copyReportToClipboard()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">📋 복사</button>
                 <button onclick="downloadReport()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">💾 다운로드</button>
+                <button onclick="exportReportToObsidian()" class="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 rounded text-xs font-medium">📓 옵시디언</button>
               </div>
             </div>
             <div id="reportDetail" class="prose prose-invert max-w-none text-sm">
@@ -1290,6 +1322,8 @@
               <h3 class="text-lg font-bold">📈 주간 분석</h3>
               <div id="weeklyActions" class="flex gap-2 hidden">
                 <button onclick="copyWeeklyToClipboard()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">📋 복사</button>
+                <button onclick="downloadWeeklyDigest()" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs font-medium">💾 다운로드</button>
+                <button onclick="exportWeeklyToObsidian()" class="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 rounded text-xs font-medium">📓 옵시디언</button>
               </div>
             </div>
             <div id="weeklyDigestStats" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" style="display:none">
@@ -1886,6 +1920,19 @@
         <span class="text-xs text-white/30">마크다운 지원 · ⌘+Enter 저장</span>
       </div>
       <div id="qiPreviewArea" class="hidden bg-white/5 border border-white/10 rounded-lg p-4 max-h-[120px] overflow-auto markdown-content text-sm"></div>
+
+      <!-- 메모 카테고리 (메모 모드에서만 표시) -->
+      <div id="memoCategoryRow" class="mt-3 flex items-center gap-2">
+        <span class="text-xs text-white/60">카테고리:</span>
+        <button onclick="setMemoCategory('learning')" data-cat="learning"
+          class="memo-cat-btn px-2 py-1 rounded text-xs border border-white/20 text-white/60 hover:border-green-400 hover:text-green-400 transition-colors">📚 학습</button>
+        <button onclick="setMemoCategory('work')" data-cat="work"
+          class="memo-cat-btn px-2 py-1 rounded text-xs border border-white/20 text-white/60 hover:border-blue-400 hover:text-blue-400 transition-colors">💼 업무</button>
+        <button onclick="setMemoCategory('idea')" data-cat="idea"
+          class="memo-cat-btn px-2 py-1 rounded text-xs border border-white/20 text-white/60 hover:border-yellow-400 hover:text-yellow-400 transition-colors">💡 아이디어</button>
+        <button onclick="setMemoCategory('todo')" data-cat="todo"
+          class="memo-cat-btn px-2 py-1 rounded text-xs border border-white/20 text-white/60 hover:border-emerald-400 hover:text-emerald-400 transition-colors">✅ 완료</button>
+      </div>
 
       <!-- 백로그 우선순위 (백로그 모드에서만 표시) -->
       <div id="backlogPriorityRow" class="hidden mt-3 flex items-center gap-2">
@@ -5143,6 +5190,9 @@
         // Obsidian 경로
         document.getElementById('settingsObsidianVaultPath').value = currentSettings.obsidianVaultPath || '';
         document.getElementById('settingsObsidianDailyFolder').value = currentSettings.obsidianDailyFolder || 'DAILY';
+        document.getElementById('settingsObsidianMorningFolder').value = currentSettings.obsidianMorningFolder || 'Morning Plans';
+        document.getElementById('settingsObsidianReportFolder').value = currentSettings.obsidianReportFolder || 'Daily Reports';
+        document.getElementById('settingsObsidianWeeklyFolder').value = currentSettings.obsidianWeeklyFolder || 'WEEKLY';
         updateObsidianPreview();
 
         // 알림 권한 상태 표시
@@ -5199,7 +5249,10 @@
         defaultRetry: parseInt(document.getElementById('settingsDefaultRetry').value) || 0,
         notifications: collectNotificationSettings(),
         obsidianVaultPath: document.getElementById('settingsObsidianVaultPath').value.trim() || undefined,
-        obsidianDailyFolder: document.getElementById('settingsObsidianDailyFolder').value.trim() || undefined
+        obsidianDailyFolder: document.getElementById('settingsObsidianDailyFolder').value.trim() || undefined,
+        obsidianMorningFolder: document.getElementById('settingsObsidianMorningFolder').value.trim() || undefined,
+        obsidianReportFolder: document.getElementById('settingsObsidianReportFolder').value.trim() || undefined,
+        obsidianWeeklyFolder: document.getElementById('settingsObsidianWeeklyFolder').value.trim() || undefined
       };
 
       // 브라우저 알림 설정은 localStorage에 저장 (브라우저별 설정)
@@ -6685,13 +6738,24 @@
           </div>
         ` : `
           <div class="space-y-3 max-h-[55vh] overflow-auto custom-scrollbar pr-1">
-            ${renderGhSection('📝', '커밋', gh.commits || [], 'commits', (c, i) => `
-              <div class="flex items-start gap-2">
-                ${ghRepoBadge(c.repoShort, c.repo)}
-                <span class="text-xs text-gray-500 flex-shrink-0 mt-0.5">${c.account}</span>
-                <span class="text-gray-300 text-sm">${(c.messages || []).slice(0, 2).map(m => escapeHtml(m.split('\\n')[0])).join(', ') || escapeHtml(c.branch)}</span>
-              </div>
-            `)}
+            ${renderGhSection('📝', '커밋', gh.commits || [], 'commits', (c, i) => {
+              const msg = c.message || (c.messages || [])[0] || c.branch || '';
+              const lines = msg.split('\n');
+              const title = lines[0];
+              const body = lines.slice(1).filter(l => l.trim()).join('\n');
+              const sha7 = (c.sha || (c.shas || [])[0] || '').substring(0, 7);
+              const commitUrl = c.url || (sha7 ? `https://github.com/${c.repo}/commit/${c.sha || (c.shas || [])[0]}` : '');
+              return `
+              <div data-commit>
+                <div class="flex items-start gap-2">
+                  ${ghRepoBadge(c.repoShort, c.repo)}
+                  ${commitUrl && sha7 ? `<a href="${commitUrl}" target="_blank" onclick="event.stopPropagation()" class="text-xs font-mono bg-gray-700/50 px-1 py-0.5 rounded text-blue-400 hover:text-blue-300 hover:underline flex-shrink-0 mt-px">${sha7}</a>` : ''}
+                  <span class="text-gray-300 text-sm flex-1 min-w-0 truncate">${escapeHtml(title)}</span>
+                  ${body ? `<button onclick="event.preventDefault(); event.stopPropagation(); const b=this.closest('[data-commit]').querySelector('.commit-body'); b.classList.toggle('hidden'); this.textContent=b.classList.contains('hidden')?'▸':'▾'" class="text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 text-sm flex-shrink-0 px-2 py-0.5 rounded transition-colors">▸</button>` : ''}
+                </div>
+                ${body ? `<pre class="commit-body hidden text-xs text-gray-400 mt-1.5 pl-3 border-l-2 border-gray-700 whitespace-pre-wrap font-sans leading-relaxed">${escapeHtml(body)}</pre>` : ''}
+              </div>`;
+            })}
 
             ${renderGhSection('🔀', 'Pull Requests', gh.prs || [], 'prs', (pr, i) => `
               <div class="flex items-start gap-2">
@@ -7327,8 +7391,22 @@
             </div>
           </div>`
       },
+      'today-tasks': {
+        label: '오늘의 할일', icon: '☑️', defaultPos: { x: 0, y: 7, w: 4, h: 1 },
+        render: () => `
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-bold text-gray-300">☑️ 오늘의 할일</h3>
+              <span id="todayTasksProgress" class="text-xs text-gray-500"></span>
+            </div>
+            <button onclick="showTab('analysis'); setTimeout(()=>showAnalysisSubTab('morning'),50)" class="text-xs text-blue-400 hover:text-blue-300">하루 시작 →</button>
+          </div>
+          <div id="todayTasksList" class="space-y-1.5">
+            <div class="text-gray-500 text-center py-4 text-sm">로딩중...</div>
+          </div>`
+      },
       'recent-runs': {
-        label: '최근 실행', icon: '▶️', defaultPos: { x: 0, y: 7, w: 2, h: 2 },
+        label: '최근 실행', icon: '▶️', defaultPos: { x: 0, y: 8, w: 2, h: 2 },
         render: () => `
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold text-gray-300">▶️ 최근 실행</h3>
@@ -7339,7 +7417,7 @@
           </div>`
       },
       'recent-memos': {
-        label: '최근 메모', icon: '📝', defaultPos: { x: 2, y: 7, w: 2, h: 2 },
+        label: '최근 메모', icon: '📝', defaultPos: { x: 2, y: 8, w: 2, h: 2 },
         render: () => `
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold text-gray-300">📝 최근 메모</h3>
@@ -7355,10 +7433,11 @@
       { id: 'w1', type: 'suggestions', position: { x: 0, y: 0, w: 4, h: 1 } },
       { id: 'w2', type: 'summary-cards', position: { x: 0, y: 1, w: 4, h: 1 } },
       { id: 'w3', type: 'quick-actions', position: { x: 0, y: 2, w: 4, h: 1 } },
-      { id: 'w4', type: 'timeline', position: { x: 0, y: 3, w: 4, h: 2 } },
-      { id: 'w5', type: 'productivity', position: { x: 0, y: 5, w: 4, h: 2 } },
-      { id: 'w6', type: 'recent-runs', position: { x: 0, y: 7, w: 2, h: 2 } },
-      { id: 'w7', type: 'recent-memos', position: { x: 2, y: 7, w: 2, h: 2 } }
+      { id: 'w8', type: 'today-tasks', position: { x: 0, y: 3, w: 4, h: 1 } },
+      { id: 'w6', type: 'recent-runs', position: { x: 0, y: 4, w: 2, h: 2 } },
+      { id: 'w7', type: 'recent-memos', position: { x: 2, y: 4, w: 2, h: 2 } },
+      { id: 'w4', type: 'timeline', position: { x: 0, y: 6, w: 4, h: 2 } },
+      { id: 'w5', type: 'productivity', position: { x: 0, y: 8, w: 4, h: 2 } }
     ];
 
     let currentWidgetLayout = null;
@@ -7726,6 +7805,82 @@
       // 서제스션 & 생산성 분석 로드
       loadSuggestions();
       loadProductivity();
+      // 오늘의 할일
+      loadTodayTasks();
+    }
+
+    // ============ 오늘의 할일 체크리스트 ============
+
+    let todayPlanId = null;
+
+    async function loadTodayTasks() {
+      const container = document.getElementById('todayTasksList');
+      const progress = document.getElementById('todayTasksProgress');
+      if (!container) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/morning-plan?date=${homeDate}`);
+        const data = await res.json();
+        if (!data.plan || !data.plan.markdown) {
+          todayPlanId = null;
+          container.innerHTML = `
+            <div class="text-center py-4">
+              <span class="text-gray-500 text-sm">오늘의 플랜이 없습니다</span>
+              <button onclick="openMorningStart()" class="ml-2 text-xs text-blue-400 hover:text-blue-300">☀️ 하루 시작하기</button>
+            </div>`;
+          if (progress) progress.textContent = '';
+          return;
+        }
+
+        todayPlanId = data.plan.id;
+        const lines = data.plan.markdown.split('\n');
+        const tasks = [];
+        for (let i = 0; i < lines.length; i++) {
+          const unchecked = lines[i].match(/^(\s*)- \[ \] (.+)/);
+          const checked = lines[i].match(/^(\s*)- \[x\] (.+)/);
+          if (unchecked) tasks.push({ text: unchecked[2].trim(), done: false });
+          else if (checked) tasks.push({ text: checked[2].trim(), done: true });
+        }
+
+        if (tasks.length === 0) {
+          container.innerHTML = '<div class="text-gray-500 text-center py-4 text-sm">체크리스트 항목이 없습니다</div>';
+          if (progress) progress.textContent = '';
+          return;
+        }
+
+        const doneCount = tasks.filter(t => t.done).length;
+        if (progress) progress.textContent = `${doneCount}/${tasks.length}`;
+
+        container.innerHTML = tasks.map((t, i) => `
+          <label class="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${t.done ? 'bg-green-900/10 hover:bg-green-900/20' : 'bg-gray-800/50 hover:bg-gray-700/50'}" onclick="toggleTodayTask(${i}, event)">
+            <input type="checkbox" ${t.done ? 'checked' : ''} class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-0 cursor-pointer" onclick="toggleTodayTask(${i}, event)">
+            <span class="flex-1 text-sm ${t.done ? 'line-through text-gray-500' : 'text-gray-300'}">${escapeHtml(t.text)}</span>
+          </label>
+        `).join('');
+      } catch (err) {
+        console.error('오늘의 할일 로드 실패:', err);
+        container.innerHTML = '<div class="text-gray-500 text-center py-4 text-sm">로드 실패</div>';
+      }
+    }
+
+    async function toggleTodayTask(index, event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!todayPlanId) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/morning-plan/${todayPlanId}/toggle`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ index })
+        });
+        if (res.ok) {
+          loadTodayTasks();
+        } else {
+          showToast('업데이트 실패', 'error');
+        }
+      } catch (err) {
+        showToast('업데이트 실패: ' + err.message, 'error');
+      }
     }
 
     // ============ 스마트 서제스션 ============
@@ -8070,6 +8225,7 @@
     let aProjectDistChart = null;
     let aProdDailyTrendChart = null;
     let aWeekCompChart = null;
+    let selectedMorningData = null;
     let selectedReportData = null;
     let selectedWeeklyData = null;
 
@@ -8300,24 +8456,65 @@
         const res = await fetch(`${API_BASE}/api/morning-plan?date=${date}`);
         const data = await res.json();
         if (data.plan && data.plan.markdown) {
+          selectedMorningData = { date, markdown: data.plan.markdown };
           const html = typeof marked !== 'undefined' ? marked.parse(data.plan.markdown) : data.plan.markdown.replace(/\n/g, '<br>');
           detailEl.innerHTML = `
             <div class="markdown-content">${html}</div>
             <div class="mt-4 flex gap-2">
-              <button onclick="openMorningStart()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">✏️ 수정</button>
+              <button onclick="openMorningStart('${date}')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">✏️ 수정</button>
             </div>
           `;
+          document.getElementById('morningActions').classList.remove('hidden');
         } else {
+          selectedMorningData = null;
           detailEl.innerHTML = `
             <div class="text-center py-16">
               <div class="text-4xl mb-3">☀️</div>
               <div class="text-gray-500 mb-4">${formatDateLabel(date)}의 플랜이 없습니다</div>
-              <button onclick="openMorningStart()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium">☀️ 하루 시작하기</button>
+              <button onclick="openMorningStart('${date}')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium">☀️ 하루 시작하기</button>
             </div>
           `;
+          document.getElementById('morningActions').classList.add('hidden');
         }
       } catch (err) {
         detailEl.innerHTML = '<div class="text-center text-red-400 py-8">로드 실패</div>';
+        document.getElementById('morningActions').classList.add('hidden');
+      }
+    }
+
+    function copyMorningToClipboard() {
+      if (selectedMorningData?.markdown) {
+        navigator.clipboard.writeText(selectedMorningData.markdown).then(() => showToast('클립보드에 복사됨', 'success'));
+      }
+    }
+
+    function downloadMorningPlan() {
+      if (!selectedMorningData?.markdown) return;
+      const blob = new Blob([selectedMorningData.markdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `morning-plan-${selectedMorningData.date}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function exportMorningToObsidian() {
+      if (!selectedMorningData?.markdown) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/morning-plan/obsidian`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: selectedMorningData.date, markdown: selectedMorningData.markdown })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`옵시디언에 저장됨: ${data.relativePath}`, 'success');
+        } else {
+          showToast(data.error || '옵시디언 내보내기 실패', 'error');
+        }
+      } catch (err) {
+        showToast('옵시디언 내보내기 실패: ' + err.message, 'error');
       }
     }
 
@@ -8409,6 +8606,25 @@
       URL.revokeObjectURL(url);
     }
 
+    async function exportReportToObsidian() {
+      if (!selectedReportData?.markdown) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/reports/daily/obsidian`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: selectedReportData.date, type: selectedReportData.type, markdown: selectedReportData.markdown })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`옵시디언에 저장됨: ${data.relativePath}`, 'success');
+        } else {
+          showToast(data.error || '옵시디언 내보내기 실패', 'error');
+        }
+      } catch (err) {
+        showToast('옵시디언 내보내기 실패: ' + err.message, 'error');
+      }
+    }
+
     // --- 주간 분석 ---
     async function loadAnalysisWeekly() {
       try {
@@ -8482,6 +8698,36 @@
     function copyWeeklyToClipboard() {
       if (selectedWeeklyData?.markdown) {
         navigator.clipboard.writeText(selectedWeeklyData.markdown).then(() => showToast('클립보드에 복사됨', 'success'));
+      }
+    }
+
+    function downloadWeeklyDigest() {
+      if (!selectedWeeklyData?.markdown) return;
+      const blob = new Blob([selectedWeeklyData.markdown], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `weekly-digest-${selectedWeeklyData.weekStart}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function exportWeeklyToObsidian() {
+      if (!selectedWeeklyData?.markdown) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/weekly-digest/obsidian`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ weekStart: selectedWeeklyData.weekStart, markdown: selectedWeeklyData.markdown })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`옵시디언에 저장됨: ${data.relativePath}`, 'success');
+        } else {
+          showToast(data.error || '옵시디언 내보내기 실패', 'error');
+        }
+      } catch (err) {
+        showToast('옵시디언 내보내기 실패: ' + err.message, 'error');
       }
     }
 
@@ -8950,10 +9196,12 @@
 
     let quickInputType = 'memo'; // 'memo' | 'backlog'
     let backlogPriority = 'normal';
+    let memoCategory = null;
 
     function openQuickInput(type) {
       quickInputType = type || 'memo';
       backlogPriority = 'normal';
+      memoCategory = null;
       const modal = document.getElementById('quickInputModal');
       modal.style.display = 'flex';
 
@@ -8967,6 +9215,7 @@
       const memoBtn = document.getElementById('qiTypeMemo');
       const backlogBtn = document.getElementById('qiTypeBacklog');
       const priRow = document.getElementById('backlogPriorityRow');
+      const catRow = document.getElementById('memoCategoryRow');
       const textarea = document.getElementById('quickInputText');
       const icon = document.getElementById('quickInputIcon');
       const title = document.getElementById('quickInputTitle');
@@ -8976,14 +9225,17 @@
         memoBtn.className = 'flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all bg-white/20 text-white';
         backlogBtn.className = 'flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all text-white/60';
         priRow.classList.add('hidden');
+        catRow.classList.remove('hidden');
         textarea.placeholder = '지금 하고 있는 일, 생각, 메모...';
         icon.textContent = '📝';
         title.textContent = '빠른 메모';
         saveBtn.innerHTML = '💾 저장';
+        setMemoCategory(null);
       } else {
         backlogBtn.className = 'flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all bg-white/20 text-white';
         memoBtn.className = 'flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-all text-white/60';
         priRow.classList.remove('hidden');
+        catRow.classList.add('hidden');
         textarea.placeholder = '나중에 할 일, 아이디어, TODO...';
         icon.textContent = '📋';
         title.textContent = '백로그 추가';
@@ -8999,6 +9251,17 @@
           btn.className = 'backlog-pri-btn px-2 py-1 rounded text-xs border border-white/30 bg-white/10 text-white transition-colors';
         } else {
           btn.className = 'backlog-pri-btn px-2 py-1 rounded text-xs border border-white/20 text-white/60 transition-colors';
+        }
+      });
+    }
+
+    function setMemoCategory(cat) {
+      memoCategory = (memoCategory === cat) ? null : cat;
+      document.querySelectorAll('.memo-cat-btn').forEach(btn => {
+        if (btn.dataset.cat === memoCategory) {
+          btn.className = 'memo-cat-btn px-2 py-1 rounded text-xs border border-white/30 bg-white/10 text-white transition-colors';
+        } else {
+          btn.className = 'memo-cat-btn px-2 py-1 rounded text-xs border border-white/20 text-white/60 transition-colors';
         }
       });
     }
@@ -9045,10 +9308,12 @@
           if (!res.ok) throw new Error('저장 실패');
           showToast('백로그가 추가되었습니다 📋', 'success');
         } else {
+          const payload = { content: text };
+          if (memoCategory) payload.category = memoCategory;
           const res = await fetch(`${API_BASE}/api/quick-memos`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: text })
+            body: JSON.stringify(payload)
           });
           if (!res.ok) throw new Error('저장 실패');
           showToast('메모가 저장되었습니다 📝', 'success');
@@ -9392,8 +9657,8 @@
       } catch (e) { /* ignore */ }
     }
 
-    async function openMorningStart() {
-      const today = getKSTDateString();
+    async function openMorningStart(targetDate) {
+      const today = targetDate || homeDate || getKSTDateString();
       morningData = {
         date: today,
         tasks: [],
@@ -9560,7 +9825,7 @@
           <textarea id="morningMarkdownEditor"
             class="w-full bg-gray-800 border border-gray-700 rounded-lg p-4 min-h-[400px] resize-none focus:outline-none focus:border-amber-500 text-sm font-mono leading-relaxed"
             oninput="morningData.markdown = this.value"
-          ></textarea>
+          >${escapeHtml(morningData.markdown || '')}</textarea>
         </div>
       `;
     }
@@ -9585,7 +9850,12 @@
       } else if (tab === 'preview') {
         // 마크다운 렌더링 뷰 (인터랙티브 체크박스)
         collectFormData();
-        morningData.markdown = document.getElementById('morningMarkdownEditor')?.value || generateMorningMarkdown();
+        const editorVal = document.getElementById('morningMarkdownEditor')?.value;
+        if (editorVal) {
+          morningData.markdown = editorVal;
+        } else if (!morningData.markdown) {
+          morningData.markdown = generateMorningMarkdown();
+        }
         renderMorningInteractiveView();
         pvArea.classList.remove('hidden');
         pvTab.className = activeClass;
@@ -9693,6 +9963,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            date: morningData.date,
             tasks: morningData.tasks,
             additionalTasks: morningData.additionalTasks,
             goals: morningData.goals,
@@ -10075,6 +10346,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            date: morningData.date,
             tasks: morningData.tasks,
             additionalTasks: morningData.additionalTasks,
             goals: morningData.goals,
@@ -10328,12 +10600,14 @@
     // ============ Obsidian 경로 미리보기 ============
     function updateObsidianPreview() {
       try {
-        const input = document.getElementById('settingsObsidianVaultPath');
-        const vaultPath = input?.value?.trim() || '(미설정)';
-        const preview = document.getElementById('obsidianExportPreview');
-        if (preview) {
-          preview.textContent = vaultPath !== '(미설정)' ? `${vaultPath}/Claude Sessions/YYYY-MM/` : '(Vault 경로를 설정하세요)';
-        }
+        const vaultPath = document.getElementById('settingsObsidianVaultPath')?.value?.trim();
+        const noVault = !vaultPath;
+        const base = noVault ? '(Vault 경로를 설정하세요)' : vaultPath;
+        const el = id => document.getElementById(id);
+        el('obsidianExportPreview').textContent = noVault ? base : `${base}/Claude Sessions/YYYY-MM/`;
+        el('obsidianMorningPreview').textContent = noVault ? base : `${base}/${document.getElementById('settingsObsidianMorningFolder')?.value?.trim() || 'Morning Plans'}/`;
+        el('obsidianReportPreview').textContent = noVault ? base : `${base}/${document.getElementById('settingsObsidianReportFolder')?.value?.trim() || 'Daily Reports'}/`;
+        el('obsidianWeeklyPreview').textContent = noVault ? base : `${base}/${document.getElementById('settingsObsidianWeeklyFolder')?.value?.trim() || 'WEEKLY'}/`;
       } catch (e) { /* ignore */ }
     }
 

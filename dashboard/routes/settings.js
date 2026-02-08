@@ -24,7 +24,10 @@ router.get('/', (req, res) => {
     defaultRetry: settings.defaultRetry || 0,
     notifications: settings.notifications || { channels: [], rules: [] },
     obsidianVaultPath: vaultPath,
-    obsidianDailyFolder: dailyFolder
+    obsidianDailyFolder: dailyFolder,
+    obsidianMorningFolder: settings.obsidianMorningFolder || 'Morning Plans',
+    obsidianReportFolder: settings.obsidianReportFolder || 'Daily Reports',
+    obsidianWeeklyFolder: settings.obsidianWeeklyFolder || 'WEEKLY'
   });
 });
 
@@ -44,6 +47,9 @@ router.put('/', (req, res) => {
     if (req.body.notifications !== undefined) data.settings.notifications = req.body.notifications;
     if (req.body.obsidianVaultPath !== undefined) data.settings.obsidianVaultPath = req.body.obsidianVaultPath;
     if (req.body.obsidianDailyFolder !== undefined) data.settings.obsidianDailyFolder = req.body.obsidianDailyFolder;
+    if (req.body.obsidianMorningFolder !== undefined) data.settings.obsidianMorningFolder = req.body.obsidianMorningFolder;
+    if (req.body.obsidianReportFolder !== undefined) data.settings.obsidianReportFolder = req.body.obsidianReportFolder;
+    if (req.body.obsidianWeeklyFolder !== undefined) data.settings.obsidianWeeklyFolder = req.body.obsidianWeeklyFolder;
     state.saveJobs(data);
     if (data.settings.slackWebhookUrl) process.env.SLACK_WEBHOOK_URL = data.settings.slackWebhookUrl;
     if (data.settings.dashboardUrl) state.dashboardUrl = data.settings.dashboardUrl;

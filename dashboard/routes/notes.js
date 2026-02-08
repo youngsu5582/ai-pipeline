@@ -29,7 +29,7 @@ router.get('/quick-memos', (req, res) => {
 });
 
 router.post('/quick-memos', (req, res) => {
-  const { content } = req.body;
+  const { content, category } = req.body;
   if (!content || !content.trim()) return res.status(400).json({ error: 'content required' });
   const memos = loadQuickMemos();
   const newMemo = { id: `memo-${Date.now()}`, content: content.trim(), timestamp: new Date().toISOString() };
@@ -41,7 +41,13 @@ router.post('/quick-memos', (req, res) => {
   const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
   appendToObsidianSection('## ⏰ 시간별 메모', `- \`${timeStr}\` ${content.trim()}`);
   res.json({ success: true, memo: newMemo });
-  classifyMemoBackground(newMemo.id, newMemo.content).catch(err => console.error('[MemoCategory] 분류 실패:', err.message));
+  if (category && CATEGORY_DEFINITIONS[category]) {
+    const categories = loadMemoCategories();
+    categories[newMemo.id] = { category, tags: [], autoTags: false, classifiedAt: new Date().toISOString() };
+    saveMemoCategories(categories);
+  } else {
+    classifyMemoBackground(newMemo.id, newMemo.content).catch(err => console.error('[MemoCategory] 분류 실패:', err.message));
+  }
 });
 
 router.delete('/quick-memos/:id', (req, res) => {
@@ -126,8 +132,8 @@ router.get('/morning-plan', (req, res) => {
 });
 
 router.post('/morning-plan', (req, res) => {
-  const { tasks, additionalTasks, goals, focusTime, motto, markdown } = req.body;
-  const today = state.getKSTDateString();
+  const { tasks, additionalTasks, goals, focusTime, motto, markdown, date } = req.body;
+  const today = date || state.getKSTDateString();
   const plans = loadMorningPlans();
   const existingIdx = plans.findIndex(p => p.date === today);
   const plan = {
@@ -159,6 +165,38 @@ router.put('/morning-plan/:id', (req, res) => {
   plans[idx].updatedAt = new Date().toISOString();
   saveMorningPlans(plans);
   res.json({ success: true, plan: plans[idx] });
+});
+
+// Toggle morning plan checklist item
+router.patch('/morning-plan/:id/toggle', (req, res) => {
+  const { index } = req.body;
+  if (index === undefined) return res.status(400).json({ error: 'index required' });
+  const plans = loadMorningPlans();
+  const plan = plans.find(p => p.id === req.params.id);
+  if (!plan) return res.status(404).json({ error: 'Morning plan not found' });
+
+  // Parse markdown checklist items and toggle
+  const lines = plan.markdown.split('\n');
+  let checkIdx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const unchecked = lines[i].match(/^(\s*- \[) \]/);
+    const checked = lines[i].match(/^(\s*- \[)x\]/);
+    if (unchecked || checked) {
+      if (checkIdx === index) {
+        if (unchecked) {
+          lines[i] = lines[i].replace('- [ ]', '- [x]');
+        } else {
+          lines[i] = lines[i].replace('- [x]', '- [ ]');
+        }
+        break;
+      }
+      checkIdx++;
+    }
+  }
+  plan.markdown = lines.join('\n');
+  plan.updatedAt = new Date().toISOString();
+  saveMorningPlans(plans);
+  res.json({ success: true, markdown: plan.markdown });
 });
 
 // --- Backlogs ---

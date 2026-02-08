@@ -53,6 +53,7 @@ async function ghExecAs(username, args, timeout = 15000) {
 
 async function fetchGithubEventsForAccount(username, targetDate) {
   const result = { username, commits: [], prs: [], reviews: [], comments: [] };
+  const pushEventRepos = new Set();
 
   try {
     const raw = await ghExecAs(username, [
@@ -70,12 +71,14 @@ async function fetchGithubEventsForAccount(username, targetDate) {
 
       switch (e.type) {
         case 'PushEvent': {
+          pushEventRepos.add(repo);
           const commits = e.payload?.commits || [];
           if (commits.length > 0) {
             result.commits.push({
               repo, repoShort, account: username, time,
               count: commits.length,
               messages: commits.map(c => c.message).filter(Boolean),
+              shas: commits.map(c => c.sha).filter(Boolean),
               branch: (e.payload?.ref || '').replace('refs/heads/', '')
             });
           }
@@ -135,6 +138,33 @@ async function fetchGithubEventsForAccount(username, targetDate) {
     }
   } catch (e) {
     console.log(`[GitHub] ${username} 이벤트 조회 실패:`, e.message);
+  }
+
+  // PushEvent에 커밋 데이터가 없으면 repos commits API로 폴백
+  if (result.commits.length === 0 && pushEventRepos.size > 0) {
+    const since = new Date(targetDate + 'T00:00:00+09:00').toISOString();
+    const until = new Date(targetDate + 'T23:59:59+09:00').toISOString();
+    await Promise.all([...pushEventRepos].slice(0, 5).map(async (repo) => {
+      try {
+        const raw = await ghExec([
+          'api', `/repos/${repo}/commits?author=${username}&since=${since}&until=${until}&per_page=30`,
+          '--jq', '[.[] | {sha: .sha, message: .commit.message, date: .commit.author.date, url: .html_url}]'
+        ], 10000);
+        const commits = JSON.parse(raw.trim() || '[]');
+        const repoShort = repo.split('/').pop();
+        for (const c of commits) {
+          result.commits.push({
+            repo, repoShort, account: username, time: c.date,
+            sha: c.sha, message: c.message, url: c.url,
+            count: 1,
+            messages: [c.message].filter(Boolean),
+            branch: ''
+          });
+        }
+      } catch (err) {
+        console.log(`[GitHub] ${repo} 커밋 조회 실패:`, err.message);
+      }
+    }));
   }
 
   // PR 제목 조회

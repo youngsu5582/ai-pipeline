@@ -13,6 +13,11 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+// Prevent caching of sw.js so service worker updates immediately
+app.get('/sw.js', (req, res, next) => {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  next();
+});
 app.use(express.static('public'));
 
 // ============ Routes ============

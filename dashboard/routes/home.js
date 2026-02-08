@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
@@ -373,6 +374,75 @@ router.get('/github/review-analysis', (req, res) => {
   const analyses = loadReviewAnalysis();
   if (analyses.length === 0) return res.json({ analysis: null });
   res.json({ analysis: analyses[analyses.length - 1] });
+});
+
+// Obsidian export - Morning Plan
+router.post('/morning-plan/obsidian', (req, res) => {
+  try {
+    const { date, markdown } = req.body;
+    if (!date || !markdown) return res.status(400).json({ error: 'date and markdown are required' });
+    const { vaultPath } = getObsidianPaths();
+    if (!vaultPath) return res.status(400).json({ error: 'Obsidian vault path not configured' });
+    const jobsData = state.loadJobs();
+    const folder = jobsData.settings?.obsidianMorningFolder || 'Morning Plans';
+    const targetDir = path.join(vaultPath, folder);
+    fs.mkdirSync(targetDir, { recursive: true });
+    const fileName = `${date}-morning-plan.md`;
+    const filePath = path.join(targetDir, fileName);
+    fs.writeFileSync(filePath, markdown, 'utf8');
+    const relativePath = `${folder}/${fileName}`;
+    console.log(`[Obsidian] Morning plan exported: ${relativePath}`);
+    res.json({ success: true, relativePath });
+  } catch (err) {
+    console.error('[Obsidian] Morning plan export error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Obsidian export - Daily Report
+router.post('/reports/daily/obsidian', (req, res) => {
+  try {
+    const { date, type, markdown } = req.body;
+    if (!date || !markdown) return res.status(400).json({ error: 'date and markdown are required' });
+    const { vaultPath } = getObsidianPaths();
+    if (!vaultPath) return res.status(400).json({ error: 'Obsidian vault path not configured' });
+    const jobsData = state.loadJobs();
+    const folder = jobsData.settings?.obsidianReportFolder || 'Daily Reports';
+    const targetDir = path.join(vaultPath, folder);
+    fs.mkdirSync(targetDir, { recursive: true });
+    const fileName = `${date}-${type || 'report'}.md`;
+    const filePath = path.join(targetDir, fileName);
+    fs.writeFileSync(filePath, markdown, 'utf8');
+    const relativePath = `${folder}/${fileName}`;
+    console.log(`[Obsidian] Daily report exported: ${relativePath}`);
+    res.json({ success: true, relativePath });
+  } catch (err) {
+    console.error('[Obsidian] Daily report export error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Obsidian export - Weekly Digest
+router.post('/weekly-digest/obsidian', (req, res) => {
+  try {
+    const { weekStart, markdown } = req.body;
+    if (!weekStart || !markdown) return res.status(400).json({ error: 'weekStart and markdown are required' });
+    const { vaultPath } = getObsidianPaths();
+    if (!vaultPath) return res.status(400).json({ error: 'Obsidian vault path not configured' });
+    const jobsData = state.loadJobs();
+    const folder = jobsData.settings?.obsidianWeeklyFolder || 'WEEKLY';
+    const targetDir = path.join(vaultPath, folder);
+    fs.mkdirSync(targetDir, { recursive: true });
+    const fileName = `${weekStart}-weekly-digest.md`;
+    const filePath = path.join(targetDir, fileName);
+    fs.writeFileSync(filePath, markdown, 'utf8');
+    const relativePath = `${folder}/${fileName}`;
+    console.log(`[Obsidian] Weekly digest exported: ${relativePath}`);
+    res.json({ success: true, relativePath });
+  } catch (err) {
+    console.error('[Obsidian] Weekly digest export error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
