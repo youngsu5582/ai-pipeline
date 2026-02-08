@@ -9872,52 +9872,65 @@
       }
     }
 
-    // 마크다운 뷰 렌더링 (체크박스 인터랙티브)
+    // 마크다운 뷰 렌더링 (체크박스 인터랙티브 - event delegation)
+    let morningPreviewListenerAttached = false;
+
     function renderMorningInteractiveView() {
       const preview = document.getElementById('morningMarkdownPreview');
+      if (!preview) return;
       const md = morningData.markdown || generateMorningMarkdown();
 
-      // 마크다운을 먼저 렌더링 전에 체크박스 마커를 플레이스홀더로 변환
+      // 마크다운에서 체크박스를 data attribute 기반 HTML로 직접 변환
       let checkIdx = 0;
-      const processedMd = md.replace(/^(\s*-\s*)\[( |x)\]\s*(.+)$/gim, (match, prefix, checked, text) => {
-        const idx = checkIdx++;
-        const isChecked = checked.toLowerCase() === 'x';
-        return `${prefix}|||CB:${idx}:${isChecked ? '1' : '0'}|||${text}`;
-      });
-
-      let html = renderMarkdown(processedMd);
-
-      // 플레이스홀더를 인터랙티브 체크박스 HTML로 변환
-      html = html.replace(/\|\|\|CB:(\d+):([01])\|\|\|/g, (match, idx, checked) => {
-        const isChecked = checked === '1';
-        return `<label class="inline-flex items-start gap-2 cursor-pointer" onclick="event.preventDefault(); toggleMorningCheckbox(${idx})">
-          <input type="checkbox" ${isChecked ? 'checked' : ''} class="mt-0.5 w-4 h-4 accent-amber-500 cursor-pointer flex-shrink-0">
-          <span class="${isChecked ? 'line-through text-gray-500' : ''}">` ;
-      });
-
-      // 체크박스가 있는 li의 닫는 태그에 span 닫기 추가
-      const temp = document.createElement('div');
-      temp.innerHTML = html;
-      temp.querySelectorAll('li').forEach(li => {
-        const label = li.querySelector('label[onclick*="toggleMorningCheckbox"]');
-        if (label) {
-          li.style.listStyle = 'none';
-          li.style.marginLeft = '-1em';
-          // label 내의 span이 나머지 텍스트를 감싸도록
-          const span = label.querySelector('span');
-          if (span) {
-            // label 뒤의 나머지 텍스트를 span 안으로 이동
-            let next = label.nextSibling;
-            while (next) {
-              const toMove = next;
-              next = next.nextSibling;
-              span.appendChild(toMove);
-            }
-          }
+      const lines = md.split('\n');
+      const processedLines = lines.map(line => {
+        const m = line.match(/^(\s*-\s*)\[( |x)\]\s*(.+)$/i);
+        if (m) {
+          const idx = checkIdx++;
+          const isChecked = m[2].toLowerCase() === 'x';
+          const text = m[3];
+          const checkedAttr = isChecked ? 'checked' : '';
+          const textClass = isChecked ? 'line-through text-gray-500' : '';
+          return `<div class="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${isChecked ? 'bg-amber-900/10 hover:bg-amber-900/20' : 'bg-gray-800/30 hover:bg-gray-700/30'}" data-cb-idx="${idx}" style="list-style:none">
+            <input type="checkbox" ${checkedAttr} data-cb-idx="${idx}" class="w-4 h-4 accent-amber-500 cursor-pointer flex-shrink-0">
+            <span class="flex-1 text-sm ${textClass}">${escapeHtml(text)}</span>
+          </div>`;
         }
+        return null;
       });
 
-      preview.innerHTML = temp.innerHTML;
+      // 체크박스가 아닌 라인은 일반 마크다운 렌더링
+      let htmlParts = [];
+      let mdBuffer = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (processedLines[i] !== null) {
+          // 버퍼된 마크다운이 있으면 먼저 렌더
+          if (mdBuffer.length > 0) {
+            htmlParts.push(renderMarkdown(mdBuffer.join('\n')));
+            mdBuffer = [];
+          }
+          htmlParts.push(processedLines[i]);
+        } else {
+          mdBuffer.push(lines[i]);
+        }
+      }
+      if (mdBuffer.length > 0) {
+        htmlParts.push(renderMarkdown(mdBuffer.join('\n')));
+      }
+
+      preview.innerHTML = htmlParts.join('\n');
+
+      // Event delegation (한번만 attach)
+      if (!morningPreviewListenerAttached) {
+        preview.addEventListener('click', (e) => {
+          const target = e.target.closest('[data-cb-idx]');
+          if (!target) return;
+          e.preventDefault();
+          const idx = parseInt(target.dataset.cbIdx, 10);
+          if (!isNaN(idx)) toggleMorningCheckbox(idx);
+        });
+        morningPreviewListenerAttached = true;
+      }
     }
 
     // 체크박스 토글
@@ -11092,8 +11105,17 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
-          .then(reg => console.log('[SW] registered:', reg.scope))
+          .then(reg => {
+            console.log('[SW] registered:', reg.scope);
+            // 새 SW가 있으면 즉시 업데이트
+            reg.update();
+          })
           .catch(err => console.error('[SW] registration failed:', err));
+      });
+      // 새 SW가 활성화되면 페이지 리로드
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        console.log('[SW] new version activated, reloading...');
+        window.location.reload();
       });
     }
   </script>
