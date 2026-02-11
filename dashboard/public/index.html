@@ -557,7 +557,7 @@
           <button onclick="openQuickInput()" class="px-3 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">
             📝 빠른 메모
           </button>
-          <button id="morningStartBtn" onclick="openMorningStart()" class="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 rounded-lg text-sm font-medium transition-all">
+          <button id="morningStartBtn" onclick="openMorningStart(homeDate)" class="px-3 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 rounded-lg text-sm font-medium transition-all">
             ☀️ 하루 시작
           </button>
           <button onclick="generateTodayFullReport()" class="px-3 py-2 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-400 hover:to-pink-400 rounded-lg text-sm font-medium transition-all">
@@ -1025,6 +1025,12 @@
               <option value="">전체</option>
             </select>
           </div>
+          <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-400 hover:text-gray-300 select-none">
+            <input type="checkbox" id="sessionsIncludeArchived"
+              class="rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500 w-4 h-4"
+              onchange="loadSessions()">
+            <span>📦 아카이브 포함</span>
+          </label>
           <div class="ml-auto flex gap-2">
             <button onclick="generateDailyReport()" class="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-lg text-sm font-medium transition-all" title="Claude가 오늘 세션을 분석하여 보고서 생성">
               ✨ 일일 보고서
@@ -1720,7 +1726,7 @@
 
   <!-- Log Detail Modal -->
   <div id="logModal" class="modal fixed inset-0 bg-black/50 items-center justify-center z-50">
-    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[80vh] overflow-auto">
+    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-auto">
       <div class="flex justify-between items-center mb-4">
         <h2 class="text-xl font-bold">실행 로그</h2>
         <button onclick="closeLogModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
@@ -1737,7 +1743,7 @@
               확장/축소
             </button>
           </div>
-          <pre id="logStdout" class="bg-gray-900 p-3 rounded-lg text-sm overflow-auto max-h-64 whitespace-pre-wrap transition-all"></pre>
+          <pre id="logStdout" class="bg-gray-900 p-3 rounded-lg text-sm overflow-auto max-h-[60vh] whitespace-pre-wrap transition-all"></pre>
         </div>
         <div>
           <div class="flex justify-between items-center mb-1">
@@ -1746,7 +1752,7 @@
               확장/축소
             </button>
           </div>
-          <pre id="logStderr" class="bg-gray-900 p-3 rounded-lg text-sm overflow-auto max-h-64 whitespace-pre-wrap text-red-400 transition-all"></pre>
+          <pre id="logStderr" class="bg-gray-900 p-3 rounded-lg text-sm overflow-auto max-h-[60vh] whitespace-pre-wrap text-red-400 transition-all"></pre>
         </div>
       </div>
     </div>
@@ -2988,7 +2994,7 @@
           <tr class="hover:bg-gray-700/50">
             <td class="px-4 py-3 font-medium">${h.jobName}</td>
             <td class="px-4 py-3 text-sm text-gray-400">${triggerText[h.trigger] || h.trigger}</td>
-            <td class="px-4 py-3 text-sm">${new Date(h.startTime).toLocaleString('ko-KR')}</td>
+            <td class="px-4 py-3 text-sm">${new Date(h.startTime).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</td>
             <td class="px-4 py-3 text-sm">${h.duration ? `${(h.duration / 1000).toFixed(1)}초` : '-'}</td>
             <td class="px-4 py-3">
               <span class="flex items-center gap-2">
@@ -3119,6 +3125,7 @@
                 data-arg="${opt.arg || ''}"
                 data-type="string"
                 data-system="${opt.system || false}"
+                value="${opt.default || ''}"
                 placeholder="${opt.placeholder || ''}"
                 onkeyup="updateCommandPreview()">
               ${opt.flag && !isSystem ? `<code class="text-xs text-blue-400 mt-1 block">${opt.flag}</code>` : ''}
@@ -5789,9 +5796,11 @@
       const date = document.getElementById('sessionsDate').value ||
         getKSTDateString();
       const project = document.getElementById('sessionsProject').value;
+      const includeArchived = document.getElementById('sessionsIncludeArchived')?.checked;
 
       const params = new URLSearchParams({ date });
       if (project) params.append('project', project);
+      if (includeArchived) params.append('includeArchived', 'true');
 
       try {
         const res = await fetch(`${API_BASE}/api/sessions?${params}`);
@@ -5837,34 +5846,52 @@
       }
 
       container.innerHTML = sessions.map(s => `
-        <div class="bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors border border-gray-700/50 hover:border-gray-600 group">
+        <div class="bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors border ${s.isArchiveOnly ? 'border-amber-700/40' : 'border-gray-700/50'} hover:border-gray-600 group">
           <div class="flex items-center justify-between mb-2">
-            <div class="flex items-center gap-2 cursor-pointer flex-1" onclick="showSessionDetail('${s.id}', '${s.projectPath}')">
+            <div class="flex items-center gap-2 cursor-pointer flex-1 min-w-0" onclick="showSessionDetail('${s.id}', '${s.projectPath}')">
               ${s.alias ? `
-                <span class="font-medium text-blue-400">📌 ${escapeHtml(s.alias)}</span>
-                <span class="text-xs text-gray-500">(${s.project})</span>
+                <span class="font-medium text-blue-400 truncate">📌 ${escapeHtml(s.alias)}</span>
+                <span class="text-xs text-gray-500 shrink-0">(${s.project})</span>
               ` : `
                 <span class="font-medium">${s.project}</span>
               `}
-              <span class="text-xs text-gray-500">🆔 ${s.id.substring(0, 8)}...</span>
+              <span class="text-xs text-gray-500 shrink-0">🆔 ${s.id.substring(0, 8)}...</span>
+              ${s.isArchived ? '<span class="px-1.5 py-0.5 bg-amber-900/40 text-amber-400 text-xs rounded-full border border-amber-800/40 shrink-0">📦</span>' : ''}
+              ${s.isArchiveOnly ? '<span class="px-1.5 py-0.5 bg-gray-700 text-gray-400 text-xs rounded-full shrink-0">원본 삭제됨</span>' : ''}
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1 shrink-0">
               <span class="text-sm text-gray-400">
                 ${new Date(s.modifiedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
               </span>
               ${s.hasSummary ? '<span class="text-green-400 text-sm" title="요약 생성됨">📋</span>' : ''}
               ${s.hasInsights ? '<span class="text-purple-400 text-sm" title="인사이트 생성됨">🔍</span>' : ''}
+              ${s.isArchived ? `
+                <button onclick="event.stopPropagation(); unarchiveSessionUI('${s.id}')"
+                        class="text-amber-400 hover:text-gray-400 p-1 rounded transition-all hover:bg-gray-400/10"
+                        title="아카이브 해제">
+                  📤
+                </button>
+              ` : `
+                <button onclick="event.stopPropagation(); archiveSessionUI('${s.id}', '${s.projectPath}')"
+                        class="text-gray-600 hover:text-amber-400 p-1 rounded transition-all hover:bg-amber-400/10 opacity-0 group-hover:opacity-100"
+                        title="아카이브">
+                  📦
+                </button>
+              `}
               <button data-session-id="${s.id}" data-alias="${escapeHtml(s.alias || '').replace(/'/g, '&#39;')}"
+                      data-project="${s.projectPath}"
                       onclick="event.stopPropagation(); editSessionAliasFromData(this)"
                       class="text-gray-600 hover:text-blue-400 p-1 rounded transition-all hover:bg-blue-400/10"
                       title="이름 편집">
                 ✏️
               </button>
-              <button onclick="event.stopPropagation(); deleteSession('${s.id}', '${s.projectPath}', '${escapeHtml(s.project)}')"
-                      class="text-gray-600 hover:text-red-400 p-1 rounded transition-all hover:bg-red-400/10"
-                      title="세션 삭제">
-                🗑️
-              </button>
+              ${!s.isArchiveOnly ? `
+                <button onclick="event.stopPropagation(); deleteSession('${s.id}', '${s.projectPath}', '${escapeHtml(s.project)}')"
+                        class="text-gray-600 hover:text-red-400 p-1 rounded transition-all hover:bg-red-400/10"
+                        title="세션 삭제">
+                  🗑️
+                </button>
+              ` : ''}
             </div>
           </div>
           <div class="cursor-pointer" onclick="showSessionDetail('${s.id}', '${s.projectPath}')">
@@ -5896,13 +5923,16 @@
     function editSessionAliasFromData(btn) {
       const sessionId = btn.dataset.sessionId;
       const currentAlias = btn.dataset.alias || '';
-      editSessionAlias(sessionId, currentAlias);
+      const projectPath = btn.dataset.project || '';
+      editSessionAlias(sessionId, currentAlias, projectPath);
     }
 
     // 세션 별명 편집 (인라인 모달)
     let _renameSessionId = null;
-    async function editSessionAlias(sessionId, currentAlias) {
+    let _renameSessionProject = null;
+    async function editSessionAlias(sessionId, currentAlias, projectPath) {
       _renameSessionId = sessionId;
+      _renameSessionProject = projectPath || null;
       const modal = document.getElementById('renameSessionModal');
       const input = document.getElementById('renameSessionInput');
       input.value = currentAlias || '';
@@ -5913,14 +5943,17 @@
     async function submitSessionRename() {
       const newAlias = document.getElementById('renameSessionInput').value.trim();
       const sessionId = _renameSessionId;
+      const projectPath = _renameSessionProject;
       closeRenameSessionModal();
       if (!sessionId) return;
 
       try {
+        const body = { alias: newAlias };
+        if (projectPath) body.project = projectPath;
         const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/alias`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ alias: newAlias })
+          body: JSON.stringify(body)
         });
 
         if (!res.ok) {
@@ -5945,6 +5978,42 @@
       _renameSessionId = null;
     }
 
+    // ── 세션 아카이브 ──
+    async function archiveSessionUI(sessionId, projectPath) {
+      try {
+        const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/archive`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: projectPath })
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || '아카이브 실패');
+        }
+        showToast('세션이 아카이브되었습니다', 'success');
+        loadSessions();
+      } catch (err) {
+        showToast('아카이브 실패: ' + err.message, 'error');
+      }
+    }
+
+    async function unarchiveSessionUI(sessionId) {
+      try {
+        const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/unarchive`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || '아카이브 해제 실패');
+        }
+        showToast('아카이브가 해제되었습니다', 'success');
+        loadSessions();
+      } catch (err) {
+        showToast('아카이브 해제 실패: ' + err.message, 'error');
+      }
+    }
+
     // 모달에서 세션 별명 편집 (data-* 속성에서 읽기)
     function editSessionAliasFromModalData(btn) {
       const sessionId = btn.dataset.sessionId;
@@ -5954,7 +6023,8 @@
 
     // 모달에서 세션 별명 편집
     async function editSessionAliasFromModal(sessionId, currentAlias) {
-      editSessionAlias(sessionId, currentAlias);
+      const projectPath = currentSessionData?.projectPath || '';
+      editSessionAlias(sessionId, currentAlias, projectPath);
     }
 
     // 세션 삭제
@@ -7302,9 +7372,9 @@
         render: () => `
           <div class="grid grid-cols-4 gap-3">
             <button onclick="openQuickInput()" class="px-4 py-3 bg-purple-600 hover:bg-purple-700 rounded-xl text-sm font-medium transition-colors">📝 빠른 메모</button>
-            <button onclick="openMorningStart()" class="px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 rounded-xl text-sm font-medium transition-all">☀️ 하루 시작</button>
-            <button onclick="generateTodayFullReport()" class="px-4 py-3 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-400 hover:to-pink-400 rounded-xl text-sm font-medium transition-all">📊 오늘 보고서</button>
-            <button onclick="generateWeeklyDigest()" class="px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 rounded-xl text-sm font-medium transition-all">📈 주간 분석</button>
+            <button onclick="openMorningStart(homeDate).catch(e => showToast('하루 시작 실패: ' + e.message, 'error'))" class="px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 rounded-xl text-sm font-medium transition-all">☀️ 하루 시작</button>
+            <button onclick="generateTodayFullReport().catch(e => showToast('보고서 실패: ' + e.message, 'error'))" class="px-4 py-3 bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-400 hover:to-pink-400 rounded-xl text-sm font-medium transition-all">📊 오늘 보고서</button>
+            <button onclick="generateWeeklyDigest().catch(e => showToast('주간분석 실패: ' + e.message, 'error'))" class="px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 rounded-xl text-sm font-medium transition-all">📈 주간 분석</button>
           </div>`
       },
       'timeline': {
@@ -7826,7 +7896,7 @@
           container.innerHTML = `
             <div class="text-center py-4">
               <span class="text-gray-500 text-sm">오늘의 플랜이 없습니다</span>
-              <button onclick="openMorningStart()" class="ml-2 text-xs text-blue-400 hover:text-blue-300">☀️ 하루 시작하기</button>
+              <button onclick="openMorningStart(homeDate)" class="ml-2 text-xs text-blue-400 hover:text-blue-300">☀️ 하루 시작하기</button>
             </div>`;
           if (progress) progress.textContent = '';
           return;
@@ -7837,9 +7907,17 @@
         const tasks = [];
         for (let i = 0; i < lines.length; i++) {
           const unchecked = lines[i].match(/^(\s*)- \[ \] (.+)/);
-          const checked = lines[i].match(/^(\s*)- \[x\] (.+)/);
-          if (unchecked) tasks.push({ text: unchecked[2].trim(), done: false });
-          else if (checked) tasks.push({ text: checked[2].trim(), done: true });
+          const checked = lines[i].match(/^(\s*)- \[x\] (.+)/i);
+          if (unchecked) tasks.push({ text: unchecked[2].trim(), done: false, depth: Math.floor(unchecked[1].length / 2) });
+          else if (checked) tasks.push({ text: checked[2].trim(), done: true, depth: Math.floor(checked[1].length / 2) });
+        }
+
+        // markdown에 체크리스트가 없으면 tasks 배열에서 직접 생성
+        if (tasks.length === 0 && data.plan.tasks && data.plan.tasks.length > 0) {
+          for (const t of data.plan.tasks) {
+            const leadingSpaces = t.match(/^(\s*)/)[1];
+            tasks.push({ text: t.trim(), done: false, depth: Math.floor(leadingSpaces.length / 2) });
+          }
         }
 
         if (tasks.length === 0) {
@@ -7852,9 +7930,9 @@
         if (progress) progress.textContent = `${doneCount}/${tasks.length}`;
 
         container.innerHTML = tasks.map((t, i) => `
-          <label class="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${t.done ? 'bg-green-900/10 hover:bg-green-900/20' : 'bg-gray-800/50 hover:bg-gray-700/50'}" onclick="toggleTodayTask(${i}, event)">
+          <label class="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${t.done ? 'bg-green-900/10 hover:bg-green-900/20' : 'bg-gray-800/50 hover:bg-gray-700/50'}" style="${t.depth ? 'margin-left:' + (t.depth * 20) + 'px' : ''}" onclick="toggleTodayTask(${i}, event)">
             <input type="checkbox" ${t.done ? 'checked' : ''} class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-0 cursor-pointer" onclick="toggleTodayTask(${i}, event)">
-            <span class="flex-1 text-sm ${t.done ? 'line-through text-gray-500' : 'text-gray-300'}">${escapeHtml(t.text)}</span>
+            <span class="flex-1 text-sm ${t.done ? 'line-through text-gray-500' : 'text-gray-300'}">${t.depth ? '<span class="text-gray-600 mr-1">└</span>' : ''}${escapeHtml(t.text)}</span>
           </label>
         `).join('');
       } catch (err) {
@@ -8975,7 +9053,7 @@
           showTab('notes');
           break;
         case 'plan':
-          openMorningStart();
+          openMorningStart(homeDate);
           break;
         case 'github':
           if (meta.url) window.open(meta.url, '_blank');
@@ -9645,9 +9723,9 @@
 
     // 페이지 로드 시 & 저장 후 버튼 상태 업데이트
     async function checkMorningPlanExists() {
-      const today = getKSTDateString();
+      const targetDate = homeDate || getKSTDateString();
       try {
-        const res = await fetch(`${API_BASE}/api/morning-plan?date=${today}`);
+        const res = await fetch(`${API_BASE}/api/morning-plan?date=${targetDate}`);
         const data = await res.json();
         hasMorningPlan = !!data.plan;
         const btn = document.getElementById('morningStartBtn');
@@ -9679,6 +9757,10 @@
         if (data.plan) {
           morningData = { ...morningData, ...data.plan };
           existingPlan = true;
+          // tasks는 있는데 markdown에 체크리스트가 없으면 재생성
+          if (morningData.tasks.length > 0 && !morningData.markdown.includes('- [')) {
+            morningData.markdown = '';
+          }
         }
       } catch (e) {
         console.error('모닝 플랜 로드 실패:', e);
@@ -9749,8 +9831,8 @@
           <div class="mb-5">
             <label class="block text-sm font-medium mb-2">📋 오늘의 업무</label>
             <textarea id="morningTasks"
-              class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 min-h-[100px] resize-none focus:outline-none focus:border-amber-500 text-sm leading-relaxed"
-              placeholder="한 줄에 하나씩 입력"
+              class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 min-h-[100px] resize-none focus:outline-none focus:border-amber-500 text-sm leading-relaxed font-mono"
+              placeholder="한 줄에 하나씩 (스페이스 2칸 = 하위 항목)&#10;리뷰 받으면 반영하기&#10;  PROJECT-KEY-536 리팩토링&#10;  PROJECT-KEY-512 이벤트 추가&#10;PR 리뷰하기"
             >${escapeHtml(tasksText)}</textarea>
           </div>
 
@@ -9850,21 +9932,14 @@
       } else if (tab === 'preview') {
         // 마크다운 렌더링 뷰 (인터랙티브 체크박스)
         collectFormData();
-        const editorVal = document.getElementById('morningMarkdownEditor')?.value;
-        if (editorVal) {
-          morningData.markdown = editorVal;
-        } else if (!morningData.markdown) {
-          morningData.markdown = generateMorningMarkdown();
-        }
+        morningData.markdown = generateMorningMarkdown();
         renderMorningInteractiveView();
         pvArea.classList.remove('hidden');
         pvTab.className = activeClass;
       } else if (tab === 'markdown') {
-        // 원본 편집
+        // 원본 편집 - 폼 데이터에서 재생성
         collectFormData();
-        if (!morningData.markdown || !document.getElementById('morningMarkdownEditor')?.value) {
-          morningData.markdown = generateMorningMarkdown();
-        }
+        morningData.markdown = generateMorningMarkdown();
         const editor = document.getElementById('morningMarkdownEditor');
         if (editor) editor.value = morningData.markdown;
         mdArea.classList.remove('hidden');
@@ -9878,22 +9953,29 @@
     function renderMorningInteractiveView() {
       const preview = document.getElementById('morningMarkdownPreview');
       if (!preview) return;
-      const md = morningData.markdown || generateMorningMarkdown();
+      // markdown이 없거나 체크리스트가 없으면 재생성
+      let md = morningData.markdown;
+      if (!md || (morningData.tasks.length > 0 && !md.includes('- ['))) {
+        md = generateMorningMarkdown();
+        morningData.markdown = md;
+      }
 
       // 마크다운에서 체크박스를 data attribute 기반 HTML로 직접 변환
       let checkIdx = 0;
       const lines = md.split('\n');
       const processedLines = lines.map(line => {
-        const m = line.match(/^(\s*-\s*)\[( |x)\]\s*(.+)$/i);
+        const m = line.match(/^(\s*)(-\s*)\[( |x)\]\s*(.+)$/i);
         if (m) {
           const idx = checkIdx++;
-          const isChecked = m[2].toLowerCase() === 'x';
-          const text = m[3];
+          const depth = Math.floor(m[1].length / 2);
+          const isChecked = m[3].toLowerCase() === 'x';
+          const text = m[4];
           const checkedAttr = isChecked ? 'checked' : '';
           const textClass = isChecked ? 'line-through text-gray-500' : '';
-          return `<div class="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${isChecked ? 'bg-amber-900/10 hover:bg-amber-900/20' : 'bg-gray-800/30 hover:bg-gray-700/30'}" data-cb-idx="${idx}" style="list-style:none">
+          const marginLeft = depth > 0 ? `margin-left:${depth * 24}px;` : '';
+          return `<div class="flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${isChecked ? 'bg-amber-900/10 hover:bg-amber-900/20' : 'bg-gray-800/30 hover:bg-gray-700/30'}" data-cb-idx="${idx}" style="list-style:none;${marginLeft}">
             <input type="checkbox" ${checkedAttr} data-cb-idx="${idx}" class="w-4 h-4 accent-amber-500 cursor-pointer flex-shrink-0">
-            <span class="flex-1 text-sm ${textClass}">${escapeHtml(text)}</span>
+            <span class="flex-1 text-sm ${textClass}">${depth > 0 ? '<span class="text-gray-600 mr-1">└</span>' : ''}${escapeHtml(text)}</span>
           </div>`;
         }
         return null;
@@ -10000,8 +10082,8 @@
         if (line.startsWith('## 📋')) { inTasksSection = true; continue; }
         if (line.startsWith('## ')) { inTasksSection = false; continue; }
         if (inTasksSection) {
-          const m = line.match(/^-\s*\[([ x])\]\s*(.+)$/i);
-          if (m) tasks.push(m[2].trim());
+          const m = line.match(/^(\s*)-\s*\[([ x])\]\s*(.+)$/i);
+          if (m) tasks.push(m[1] + m[3].trim());
         }
       }
       if (tasks.length > 0) morningData.tasks = tasks;
@@ -10011,7 +10093,7 @@
     function collectFormData() {
       const tasksEl = document.getElementById('morningTasks');
       if (tasksEl) {
-        morningData.tasks = tasksEl.value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        morningData.tasks = tasksEl.value.split('\n').map(l => l.trimEnd()).filter(l => l.trim().length > 0);
       }
       const rows = document.querySelectorAll('.additional-task-row');
       if (rows.length > 0) {
@@ -10073,15 +10155,15 @@
       content.innerHTML = `
         <div class="mb-4">
           <h3 class="text-lg font-bold mb-2">📋 오늘의 업무</h3>
-          <p class="text-sm text-gray-400 mb-4">오늘 해야 할 주요 업무를 적어보세요. 한 줄에 하나씩 입력하면 됩니다.</p>
+          <p class="text-sm text-gray-400 mb-4">오늘 해야 할 주요 업무를 적어보세요. 스페이스 2칸으로 하위 항목을 만들 수 있습니다.</p>
         </div>
         <textarea id="morningTasks"
-          class="w-full bg-gray-800 border border-gray-700 rounded-lg p-4 min-h-[200px] resize-none focus:outline-none focus:border-amber-500 text-sm leading-relaxed"
-          placeholder="예시:\nPR 리뷰 - frontend 팀\nAPI 엔드포인트 구현\n버그 수정 #234\n문서 업데이트"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg p-4 min-h-[200px] resize-none focus:outline-none focus:border-amber-500 text-sm leading-relaxed font-mono"
+          placeholder="예시:\n리뷰 받으면 반영하기\n  PROJECT-KEY-536 리팩토링\n  PROJECT-KEY-512 이벤트 추가\nPR 리뷰하기\n  Feature/cpdevk 513 쿠폰 정책 추가"
         >${escapeHtml(tasksText)}</textarea>
         <div class="mt-3 flex items-center gap-2 text-xs text-gray-500">
           <span class="px-2 py-1 bg-gray-800 rounded">💡</span>
-          <span>Enter로 줄바꿈하면 각각 별도 업무로 등록됩니다</span>
+          <span>스페이스 2칸으로 들여쓰면 하위 항목이 됩니다 (다단계 지원)</span>
         </div>
       `;
       setTimeout(() => document.getElementById('morningTasks')?.focus(), 100);
@@ -10214,7 +10296,11 @@
 
       if (morningData.tasks.length > 0) {
         md += `## 📋 오늘의 업무\n`;
-        morningData.tasks.forEach(t => { md += `- [ ] ${t}\n`; });
+        morningData.tasks.forEach(t => {
+          const leadingSpaces = t.match(/^(\s*)/)[1];
+          const text = t.trim();
+          md += `${leadingSpaces}- [ ] ${text}\n`;
+        });
         md += '\n';
       }
 
@@ -10308,7 +10394,7 @@
     function saveMorningStepData() {
       if (morningStep === 1) {
         const text = document.getElementById('morningTasks')?.value || '';
-        morningData.tasks = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        morningData.tasks = text.split('\n').map(l => l.trimEnd()).filter(l => l.trim().length > 0);
       } else if (morningStep === 2) {
         const rows = document.querySelectorAll('.additional-task-row');
         morningData.additionalTasks = Array.from(rows)
@@ -10347,9 +10433,15 @@
       // 편집 모드면 폼에서 데이터 수집
       if (morningEditMode) {
         collectFormData();
-        // 마크다운 에디터가 열려있으면 그 내용 사용
-        const mdEditor = document.getElementById('morningMarkdownEditor');
-        morningData.markdown = mdEditor?.value || generateMorningMarkdown();
+        // 원본 편집 탭이 활성화된 경우에만 에디터 내용 사용
+        const mdArea = document.getElementById('morningMdArea');
+        const isRawEditorActive = mdArea && !mdArea.classList.contains('hidden');
+        if (isRawEditorActive) {
+          const mdEditor = document.getElementById('morningMarkdownEditor');
+          morningData.markdown = mdEditor?.value || generateMorningMarkdown();
+        } else {
+          morningData.markdown = generateMorningMarkdown();
+        }
       } else {
         saveMorningStepData();
       }
