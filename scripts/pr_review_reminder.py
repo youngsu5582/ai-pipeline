@@ -4,6 +4,10 @@ AI Pipeline - PR Review Reminder
 =================================
 GitHub에서 리뷰 대기 중인 PR 목록을 조회하여 Slack으로 알림
 
+두 가지 카테고리:
+  1. 리뷰 대기: 리뷰 요청받았으나 아직 리뷰 시작 안 한 PR
+  2. 승인 대기: 코멘트/변경요청은 남겼지만 아직 Approve 하지 않은 PR
+
 Usage:
     python pr_review_reminder.py                              # 모든 저장소
     python pr_review_reminder.py --repo owner/repo            # 특정 저장소 (단일)
@@ -28,7 +32,7 @@ from datetime import datetime
 from typing import Optional
 
 
-def run_gh_command(args: list[str]) -> Optional[str]:
+def run_gh_command(args: list[str], silent: bool = False) -> Optional[str]:
     """gh CLI 명령 실행"""
     try:
         result = subprocess.run(
@@ -39,8 +43,7 @@ def run_gh_command(args: list[str]) -> Optional[str]:
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        # stderr에 에러 메시지 있으면 출력
-        if e.stderr:
+        if e.stderr and not silent:
             print(f"⚠️  gh 명령 실패: {e.stderr.strip()}")
         return None
     except FileNotFoundError:
@@ -49,13 +52,54 @@ def run_gh_command(args: list[str]) -> Optional[str]:
         sys.exit(1)
 
 
-def get_review_requested_prs(repo: Optional[str] = None) -> list[dict]:
-    """리뷰 요청받은 PR 목록 조회"""
-    prs = []
+def _extract_repo_from_url(url: str) -> str:
+    """PR URL에서 owner/repo 추출 (예: https://github.com/owner/repo/pull/123)"""
+    if "github.com/" in url:
+        parts = url.split("github.com/")[1].split("/")
+        if len(parts) >= 2:
+            return f"{parts[0]}/{parts[1]}"
+    return ""
 
-    # gh CLI로 리뷰 요청받은 PR 조회
+
+def _parse_pr_data(data: list[dict], repo: str = "") -> list[dict]:
+    """gh pr list JSON 결과를 공통 포맷으로 파싱"""
+    prs = []
+    for pr in data:
+        if pr.get("isDraft"):
+            continue
+
+        created_at = pr.get("createdAt", "")
+        days_old = 0
+        if created_at:
+            try:
+                created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                days_old = (datetime.now(created.tzinfo) - created).days
+            except (ValueError, TypeError):
+                pass
+
+        prs.append({
+            "number": pr.get("number"),
+            "title": pr.get("title", ""),
+            "author": pr.get("author", {}).get("login", "unknown"),
+            "created_at": created_at[:10] if created_at else "",
+            "days_old": days_old,
+            "url": pr.get("url", ""),
+            "repo": _extract_repo_from_url(pr.get("url", "")) or repo or "",
+            "branch": pr.get("headRefName", ""),
+        })
+    return prs
+
+
+def get_current_username() -> str:
+    """현재 gh CLI 인증 사용자명 조회"""
+    result = run_gh_command(["api", "user", "--jq", ".login"], silent=True)
+    return result or ""
+
+
+def get_review_requested_prs(repo: Optional[str] = None) -> list[dict]:
+    """리뷰 요청받은 PR 목록 조회 (아직 리뷰 시작 안 한 것)"""
     cmd = ["pr", "list", "--search", "review-requested:@me", "--json",
-           "number,title,author,createdAt,url,repository,headRefName,isDraft"]
+           "number,title,author,createdAt,url,headRefName,isDraft"]
 
     if repo:
         cmd.extend(["--repo", repo])
@@ -65,38 +109,83 @@ def get_review_requested_prs(repo: Optional[str] = None) -> list[dict]:
         return []
 
     try:
-        data = json.loads(result)
-        for pr in data:
-            if pr.get("isDraft"):
-                continue  # 드래프트 PR 제외
-
-            created_at = pr.get("createdAt", "")
-            # 생성일로부터 경과 시간 계산
-            days_old = 0
-            if created_at:
-                try:
-                    created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                    days_old = (datetime.now(created.tzinfo) - created).days
-                except (ValueError, TypeError):
-                    pass
-
-            prs.append({
-                "number": pr.get("number"),
-                "title": pr.get("title", ""),
-                "author": pr.get("author", {}).get("login", "unknown"),
-                "created_at": created_at[:10] if created_at else "",
-                "days_old": days_old,
-                "url": pr.get("url", ""),
-                "repo": pr.get("repository", {}).get("nameWithOwner", repo or ""),
-                "branch": pr.get("headRefName", ""),
-            })
+        return _parse_pr_data(json.loads(result), repo)
     except json.JSONDecodeError:
-        pass
-
-    return prs
+        return []
 
 
-def send_slack_notification(prs: list[dict]) -> bool:
+def get_commented_not_approved_prs(
+    repo: Optional[str] = None,
+    username: str = "",
+    exclude_numbers: Optional[set] = None,
+) -> list[dict]:
+    """코멘트/변경요청은 남겼지만 아직 Approve 하지 않은 PR"""
+    if not username:
+        return []
+
+    exclude = exclude_numbers or set()
+
+    cmd = ["pr", "list",
+           "--search", f"reviewed-by:{username} state:open -author:{username}",
+           "--json", "number,title,author,createdAt,url,headRefName,isDraft"]
+
+    if repo:
+        cmd.extend(["--repo", repo])
+
+    result = run_gh_command(cmd)
+    if not result:
+        return []
+
+    try:
+        candidates = _parse_pr_data(json.loads(result), repo)
+    except json.JSONDecodeError:
+        return []
+
+    # 리뷰 대기 목록과 중복 제거
+    candidates = [pr for pr in candidates if pr["number"] not in exclude]
+    if not candidates:
+        return []
+
+    # 각 PR에서 내 최신 리뷰 상태 확인 → APPROVED가 아닌 것만
+    result_prs = []
+    for pr in candidates:
+        owner_repo = pr["repo"]
+        state = run_gh_command([
+            "api", f"repos/{owner_repo}/pulls/{pr['number']}/reviews",
+            "--jq", f'[.[] | select(.user.login == "{username}")] | last | .state'
+        ], silent=True)
+        if state and state != "APPROVED":
+            result_prs.append(pr)
+
+    return result_prs
+
+
+def _format_pr_lines_slack(prs: list[dict], max_count: int = 15) -> list[str]:
+    """Slack mrkdwn 형식의 PR 한 줄 목록 생성"""
+    lines = []
+    for pr in prs[:max_count]:
+        urgency = ""
+        if pr["days_old"] >= 7:
+            urgency = ":red_circle: "
+        elif pr["days_old"] >= 3:
+            urgency = ":large_yellow_circle: "
+
+        repo_short = pr["repo"].split("/")[-1] if "/" in pr["repo"] else pr["repo"]
+        lines.append(
+            f"{urgency}<{pr['url']}|{pr['title']}> - "
+            f"{pr['days_old']}일 전, {pr['author']} (`{repo_short}`)"
+        )
+
+    if len(prs) > max_count:
+        lines.append(f"_...외 {len(prs) - max_count}개_")
+
+    return lines
+
+
+def send_slack_notification(
+    requested_prs: list[dict],
+    pending_approval_prs: list[dict],
+) -> bool:
     """Slack으로 알림 전송"""
     webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
 
@@ -104,61 +193,41 @@ def send_slack_notification(prs: list[dict]) -> bool:
         print("⚠️  SLACK_WEBHOOK_URL 환경변수가 설정되지 않았습니다.")
         return False
 
-    if not prs:
-        # 리뷰 대기 PR이 없으면 알림 안 보냄
+    total = len(requested_prs) + len(pending_approval_prs)
+    if total == 0:
         return True
 
-    # 블록 구성
     blocks = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"👀 리뷰 대기 PR ({len(prs)}개)",
+                "text": f"👀 PR Review Reminder ({total}개)",
                 "emoji": True
             }
         },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "아래 PR들이 리뷰를 기다리고 있습니다."
-            }
-        },
-        {"type": "divider"},
     ]
 
-    # PR 목록 (최대 10개)
-    for pr in prs[:10]:
-        # 오래된 PR 강조
-        urgency = ""
-        if pr["days_old"] >= 7:
-            urgency = "🔴 "
-        elif pr["days_old"] >= 3:
-            urgency = "🟡 "
-
+    # 카테고리 1: 리뷰 대기
+    if requested_prs:
+        lines = _format_pr_lines_slack(requested_prs)
         blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": (
-                    f"{urgency}<{pr['url']}|#{pr['number']} {pr['title']}>\n"
-                    f"• 저장소: `{pr['repo']}`\n"
-                    f"• 작성자: {pr['author']}\n"
-                    f"• 생성일: {pr['created_at']} ({pr['days_old']}일 전)"
-                )
+                "text": f"*📬 리뷰 대기* ({len(requested_prs)}개)\n" + "\n".join(lines)
             }
         })
 
-    if len(prs) > 10:
+    # 카테고리 2: 승인 대기
+    if pending_approval_prs:
+        lines = _format_pr_lines_slack(pending_approval_prs)
         blocks.append({
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"_그 외 {len(prs) - 10}개 PR..._"
-                }
-            ]
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*✏️ 승인 대기* ({len(pending_approval_prs)}개)\n" + "\n".join(lines)
+            }
         })
 
     payload = {"blocks": blocks}
@@ -177,32 +246,42 @@ def send_slack_notification(prs: list[dict]) -> bool:
         return False
 
 
-def print_summary(prs: list[dict]):
-    """콘솔에 요약 출력"""
-    print("\n" + "━" * 50)
-    print("👀 리뷰 대기 PR 목록")
-    print("━" * 50)
-
-    if not prs:
-        print("✅ 리뷰 대기 중인 PR이 없습니다.")
-        return
-
-    print(f"총 {len(prs)}개의 PR이 리뷰를 기다리고 있습니다.\n")
-
+def _print_pr_list(prs: list[dict]):
+    """PR 목록 콘솔 출력"""
     for pr in prs:
-        # 오래된 PR 강조
         urgency = ""
         if pr["days_old"] >= 7:
             urgency = "🔴 "
         elif pr["days_old"] >= 3:
             urgency = "🟡 "
 
-        print(f"{urgency}#{pr['number']} {pr['title']}")
-        print(f"   저장소: {pr['repo']}")
-        print(f"   작성자: {pr['author']}")
-        print(f"   생성일: {pr['created_at']} ({pr['days_old']}일 전)")
-        print(f"   URL: {pr['url']}")
+        print(f"  {urgency}#{pr['number']} {pr['title']}")
+        print(f"     {pr['repo']} | {pr['author']} | {pr['created_at']} ({pr['days_old']}일 전)")
+        print(f"     {pr['url']}")
         print("")
+
+
+def print_summary(requested_prs: list[dict], pending_approval_prs: list[dict]):
+    """콘솔에 요약 출력"""
+    total = len(requested_prs) + len(pending_approval_prs)
+
+    print("\n" + "━" * 50)
+    print(f"👀 PR Review Summary ({total}개)")
+    print("━" * 50)
+
+    if total == 0:
+        print("✅ 리뷰할 PR이 없습니다.")
+        return
+
+    if requested_prs:
+        print(f"\n📬 리뷰 대기 ({len(requested_prs)}개)")
+        print("   아직 리뷰를 시작하지 않은 PR\n")
+        _print_pr_list(requested_prs)
+
+    if pending_approval_prs:
+        print(f"✏️  승인 대기 ({len(pending_approval_prs)}개)")
+        print("   코멘트는 남겼지만 Approve 하지 않은 PR\n")
+        _print_pr_list(pending_approval_prs)
 
     print("━" * 50)
 
@@ -218,11 +297,9 @@ def main():
     while i < len(args):
         arg = args[i]
         if arg == "--repo" and i + 1 < len(args):
-            # 단일 저장소
             repos.append(args[i + 1])
             i += 2
         elif arg == "--repos" and i + 1 < len(args):
-            # 쉼표로 구분된 여러 저장소
             repo_list = [r.strip() for r in args[i + 1].split(",") if r.strip()]
             repos.extend(repo_list)
             i += 2
@@ -242,33 +319,52 @@ def main():
         print("   대상 저장소: 전체")
     print("")
 
-    # PR 조회
-    print("📡 리뷰 대기 PR 조회 중...")
-    all_prs = []
+    # 현재 사용자 조회
+    username = get_current_username()
+    if username:
+        print(f"👤 사용자: {username}")
 
+    # 1) 리뷰 대기 PR 조회
+    print("📡 리뷰 대기 PR 조회 중...")
+    all_requested = []
     if repos:
         for repo in repos:
-            prs = get_review_requested_prs(repo)
-            all_prs.extend(prs)
+            all_requested.extend(get_review_requested_prs(repo))
     else:
-        all_prs = get_review_requested_prs()
+        all_requested = get_review_requested_prs()
+    all_requested.sort(key=lambda x: x.get("created_at", ""))
 
-    # 생성일 기준 정렬 (오래된 것 먼저)
-    all_prs.sort(key=lambda x: x.get("created_at", ""), reverse=False)
+    # 2) 승인 대기 PR 조회
+    requested_numbers = {pr["number"] for pr in all_requested}
+    all_pending_approval = []
+
+    if username:
+        print("📡 승인 대기 PR 조회 중...")
+        if repos:
+            for repo in repos:
+                all_pending_approval.extend(
+                    get_commented_not_approved_prs(repo, username, requested_numbers)
+                )
+        else:
+            all_pending_approval = get_commented_not_approved_prs(
+                username=username, exclude_numbers=requested_numbers
+            )
+        all_pending_approval.sort(key=lambda x: x.get("created_at", ""))
 
     # 콘솔 출력
-    print_summary(all_prs)
+    print_summary(all_requested, all_pending_approval)
 
     # Slack 알림
+    total = len(all_requested) + len(all_pending_approval)
     if slack_mode:
-        if all_prs:
+        if total > 0:
             print("\n📤 Slack 알림 전송 중...")
-            if send_slack_notification(all_prs):
+            if send_slack_notification(all_requested, all_pending_approval):
                 print("✅ Slack 알림 전송 완료!")
             else:
                 print("❌ Slack 알림 전송 실패")
         else:
-            print("\n✅ 리뷰 대기 PR 없음 - Slack 알림 생략")
+            print("\n✅ 리뷰할 PR 없음 - Slack 알림 생략")
 
 
 if __name__ == "__main__":
