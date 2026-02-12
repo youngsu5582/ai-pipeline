@@ -1,7 +1,11 @@
 'use strict';
 
 const { spawn } = require('child_process');
+const path = require('path');
 const { loadJobs } = require('./state');
+
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const VENV_PIP = path.join(PROJECT_ROOT, '.venv', 'bin', 'pip');
 
 const DEFAULT_AUTO_FIX_RULES = [
   {
@@ -14,7 +18,7 @@ const DEFAULT_AUTO_FIX_RULES = [
       if (match[1]) return match[1];
       return null;
     },
-    fix: (pkg) => `~/ai-pipeline/.venv/bin/pip install ${pkg}`,
+    fix: (pkg) => `${VENV_PIP} install ${pkg}`,
     enabled: true
   },
   {

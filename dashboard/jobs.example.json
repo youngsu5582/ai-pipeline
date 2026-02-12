@@ -1,0 +1,753 @@
+{
+  "jobs": [
+    {
+      "id": "sync-jira",
+      "name": "JIRA 동기화",
+      "description": "JIRA 활동을 Daily Note에 기록",
+      "command": "python scripts/sync_jira.py",
+      "schedule": "0 18 * * *",
+      "enabled": false,
+      "category": "sync",
+      "tags": [
+        "jira",
+        "daily"
+      ],
+      "options": [
+        {
+          "flag": "--today",
+          "label": "오늘 활동",
+          "description": "어제가 아닌 오늘 활동 동기화",
+          "type": "boolean",
+          "default": false
+        },
+        {
+          "flag": "--yes",
+          "label": "자동 승인",
+          "description": "확인 없이 Daily Note에 자동 추가",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "arg": "date",
+          "label": "특정 날짜",
+          "description": "동기화할 날짜 (YYYY-MM-DD)",
+          "type": "string",
+          "placeholder": "2026-01-30"
+        },
+        {
+          "arg": "project",
+          "flag": "--project",
+          "label": "JIRA 프로젝트",
+          "description": "JIRA 프로젝트 키 (미지정 시 설정 파일)",
+          "type": "string",
+          "placeholder": "PROJECT-KEY",
+          "default": ""
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "완료/실패 시 Slack으로 알림 전송",
+          "type": "boolean",
+          "default": false,
+          "system": true
+        }
+      ]
+    },
+    {
+      "id": "vacuum-run",
+      "name": "문서 정리 실행",
+      "description": "프로젝트 루트의 흩어진 MD 파일 정리",
+      "command": "python scripts/vacuum.py ~/Projects/my-project",
+      "schedule": "10 23 * * 1-5",
+      "enabled": true,
+      "category": "vacuum",
+      "tags": [
+        "docs",
+        "cleanup"
+      ],
+      "options": [
+        {
+          "flag": "--auto",
+          "label": "자동 실행",
+          "description": "확인 없이 즉시 정리",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--to-obsidian",
+          "label": "Obsidian 복사",
+          "description": "정리된 파일을 Obsidian vault로 복사",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--dry-run",
+          "label": "미리보기",
+          "description": "실제 이동 없이 분석만",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--recursive",
+          "label": "하위 폴더 포함",
+          "description": "하위 디렉토리도 재귀적으로 탐색",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "arg": "paths",
+          "flag": "--paths",
+          "label": "추가 경로",
+          "description": "쉼표로 구분된 추가 탐색 경로 (예: docs/specs,docs/issues)",
+          "type": "string",
+          "placeholder": "docs/specs,docs/issues",
+          "default": "docs/specs"
+        },
+        {
+          "arg": "pattern",
+          "flag": "--pattern",
+          "label": "파일 패턴",
+          "description": "특정 파일 패턴만 처리 (예: PostgreSQL*.md)",
+          "type": "string",
+          "placeholder": "*.md",
+          "default": ""
+        },
+        {
+          "arg": "exclude",
+          "flag": "--exclude",
+          "label": "제외 패턴",
+          "description": "쉼표로 구분된 제외 패턴 (예: README*.md,CHANGELOG*.md)",
+          "type": "string",
+          "placeholder": "README*.md,CHANGELOG*.md",
+          "default": "README*.md"
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "완료/실패 시 Slack으로 알림 전송",
+          "type": "boolean",
+          "default": true,
+          "system": true
+        }
+      ],
+      "notes": "",
+      "execution": {
+        "timeout": 300000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
+    },
+    {
+      "id": "cloudwatch-alert",
+      "name": "CloudWatch 에러 알림",
+      "description": "AWS CloudWatch 에러 로그 감지 후 Slack 알림",
+      "command": "python scripts/cloudwatch_alert.py",
+      "schedule": "0 * * * *",
+      "enabled": false,
+      "category": "monitor",
+      "tags": [
+        "aws",
+        "cloudwatch",
+        "alert"
+      ],
+      "options": [
+        {
+          "arg": "log-groups",
+          "flag": "--log-groups",
+          "label": "로그 그룹",
+          "description": "AWS 로그 그룹 (미지정 시 설정 파일)",
+          "type": "array",
+          "placeholder": "로그 그룹 입력 후 Enter",
+          "default": [
+            "/ecs/my-app/production/web"
+          ]
+        },
+        {
+          "arg": "patterns",
+          "flag": "--patterns",
+          "label": "에러 패턴",
+          "description": "에러 패턴 (기본: ERROR)",
+          "type": "array",
+          "placeholder": "패턴 입력 후 Enter",
+          "default": [
+            "ERROR"
+          ]
+        },
+        {
+          "arg": "hours",
+          "flag": "--hours",
+          "label": "조회 시간",
+          "description": "최근 N시간 로그 조회 (기본: 1)",
+          "type": "string",
+          "placeholder": "1",
+          "default": "1"
+        },
+        {
+          "arg": "profile",
+          "flag": "--profile",
+          "label": "AWS 프로필",
+          "description": "사용할 AWS 프로필 (기본: default)",
+          "type": "string",
+          "placeholder": "default",
+          "default": "default"
+        },
+        {
+          "arg": "region",
+          "flag": "--region",
+          "label": "AWS 리전",
+          "description": "AWS 리전 (기본: ap-northeast-2)",
+          "type": "string",
+          "placeholder": "ap-northeast-2",
+          "default": ""
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "에러 감지 시 Slack으로 알림 전송",
+          "type": "boolean",
+          "default": true,
+          "system": true
+        }
+      ],
+      "notes": "",
+      "execution": {
+        "timeout": 300000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
+    },
+    {
+      "id": "pr-review-reminder",
+      "name": "PR 리뷰 알림",
+      "description": "리뷰 대기 중인 PR 목록 Slack 알림",
+      "command": "python scripts/pr_review_reminder.py",
+      "schedule": "0 9 * * 1-5",
+      "enabled": true,
+      "category": "monitor",
+      "tags": [
+        "github",
+        "pr",
+        "review"
+      ],
+      "options": [
+        {
+          "arg": "repos",
+          "flag": "--repos",
+          "label": "저장소 목록",
+          "description": "GitHub 저장소 (owner/repo)",
+          "type": "array",
+          "placeholder": "owner/repo 입력 후 Enter",
+          "default": [
+            "owner/my-repo"
+          ]
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "리뷰 대기 PR을 Slack으로 알림",
+          "type": "boolean",
+          "default": true,
+          "system": true
+        }
+      ],
+      "notes": "",
+      "execution": {
+        "timeout": 300000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
+    },
+    {
+      "id": "rss-collector",
+      "name": "RSS 피드 수집",
+      "description": "RSS 피드를 수집하여 Obsidian에 저장",
+      "command": "python scripts/rss_collector.py",
+      "schedule": "0 8 * * *",
+      "enabled": false,
+      "category": "sync",
+      "tags": [
+        "rss",
+        "reading",
+        "obsidian"
+      ],
+      "options": [
+        {
+          "arg": "feeds",
+          "flag": "--feeds",
+          "label": "피드 URL",
+          "description": "RSS 피드 URL (미지정 시 설정 파일 사용)",
+          "type": "array",
+          "placeholder": "URL 입력 후 Enter",
+          "default": []
+        },
+        {
+          "arg": "days",
+          "flag": "--days",
+          "label": "수집 범위",
+          "description": "최근 N일간 글 수집 (기본: 7)",
+          "type": "string",
+          "placeholder": "7",
+          "default": "7"
+        },
+        {
+          "flag": "--yes",
+          "label": "자동 저장",
+          "description": "확인 없이 Obsidian에 자동 저장",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--skip-existing",
+          "label": "중복 방지",
+          "description": "Obsidian에 이미 있는 글 건너뛰기",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "완료/실패 시 Slack으로 알림 전송",
+          "type": "boolean",
+          "default": true,
+          "system": true
+        }
+      ],
+      "notes": "",
+      "execution": {
+        "timeout": 300000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
+    },
+    {
+      "id": "git-cleanup",
+      "name": "Git 브랜치 정리",
+      "description": "머지된 로컬 브랜치 정리",
+      "command": "python scripts/git_cleanup.py",
+      "schedule": "30 10 * * 1",
+      "enabled": true,
+      "category": "maintenance",
+      "tags": [
+        "git",
+        "cleanup"
+      ],
+      "options": [
+        {
+          "arg": "repos",
+          "flag": "--repos",
+          "label": "저장소 경로",
+          "description": "저장소 경로 (미지정 시 설정 파일)",
+          "type": "array",
+          "placeholder": "경로 입력 후 Enter",
+          "default": [
+            "~/Projects/my-project"
+          ]
+        },
+        {
+          "flag": "--dry-run",
+          "label": "미리보기",
+          "description": "실제 삭제 없이 미리보기만",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--yes",
+          "label": "자동 삭제",
+          "description": "확인 없이 브랜치 삭제",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "완료/실패 시 Slack으로 알림 전송",
+          "type": "boolean",
+          "default": true,
+          "system": true
+        }
+      ],
+      "notes": "",
+      "execution": {
+        "timeout": 300000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
+    },
+    {
+      "id": "temp-cleanup",
+      "name": "임시 파일 정리",
+      "description": "Downloads 등 오래된 파일 정리",
+      "command": "python scripts/temp_cleanup.py",
+      "schedule": "0 10 * * 0",
+      "enabled": false,
+      "category": "maintenance",
+      "tags": [
+        "cleanup",
+        "disk"
+      ],
+      "options": [
+        {
+          "arg": "folders",
+          "flag": "--folders",
+          "label": "폴더 경로",
+          "description": "정리 대상 폴더 (미지정 시 설정 파일)",
+          "type": "array",
+          "placeholder": "폴더 경로 입력 후 Enter",
+          "default": []
+        },
+        {
+          "arg": "days",
+          "flag": "--days",
+          "label": "보관 기간",
+          "description": "N일 이상 된 파일 삭제 (기본: 30)",
+          "type": "string",
+          "placeholder": "30",
+          "default": "30"
+        },
+        {
+          "arg": "exclude",
+          "flag": "--exclude",
+          "label": "제외 패턴",
+          "description": "제외할 파일 패턴",
+          "type": "array",
+          "placeholder": "패턴 입력 후 Enter",
+          "default": []
+        },
+        {
+          "flag": "--dry-run",
+          "label": "미리보기",
+          "description": "실제 삭제 없이 미리보기만",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--yes",
+          "label": "자동 삭제",
+          "description": "확인 없이 파일 삭제",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "완료/실패 시 Slack으로 알림 전송",
+          "type": "boolean",
+          "default": true,
+          "system": true
+        }
+      ],
+      "notes": "",
+      "execution": {
+        "timeout": 300000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
+    },
+    {
+      "id": "monthly-review",
+      "name": "월간 리포트",
+      "description": "월간 성장 리포트 생성 (AI 분석)",
+      "command": "python scripts/monthly.py",
+      "schedule": "0 21 1 * *",
+      "enabled": false,
+      "category": "review",
+      "tags": [
+        "monthly",
+        "review",
+        "obsidian"
+      ],
+      "options": [
+        {
+          "flag": "--yes",
+          "label": "자동 저장",
+          "description": "확인 없이 리포트 저장",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "완료/실패 시 Slack으로 알림 전송",
+          "type": "boolean",
+          "default": false,
+          "system": true
+        }
+      ]
+    },
+    {
+      "id": "productivity-report",
+      "name": "생산성 리포트",
+      "description": "학습량, 커밋, PR, Claude 세션 종합 분석",
+      "command": "python scripts/productivity_report.py",
+      "schedule": "0 20 * * 0",
+      "enabled": false,
+      "category": "review",
+      "tags": [
+        "productivity",
+        "analytics",
+        "obsidian"
+      ],
+      "options": [
+        {
+          "arg": "period",
+          "flag": "--period",
+          "label": "기간",
+          "description": "리포트 기간 (daily/weekly/monthly)",
+          "type": "select",
+          "choices": [
+            "daily",
+            "weekly",
+            "monthly"
+          ],
+          "default": "weekly"
+        },
+        {
+          "arg": "date",
+          "flag": "--date",
+          "label": "기준 날짜",
+          "description": "기준 날짜 (YYYY-MM-DD, 기본: 오늘)",
+          "type": "string",
+          "placeholder": "2026-01-31",
+          "default": ""
+        },
+        {
+          "flag": "--yes",
+          "label": "자동 저장",
+          "description": "확인 없이 리포트 저장",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--slack",
+          "label": "Slack 알림",
+          "description": "완료/실패 시 Slack으로 알림 전송",
+          "type": "boolean",
+          "default": false,
+          "system": true
+        }
+      ]
+    },
+    {
+      "id": "hourly-checkin",
+      "name": "시간별 기록",
+      "description": "매시간 지금 하고 있는 일 기록",
+      "interactive": true,
+      "schedule": "6 * * * *",
+      "enabled": true,
+      "category": "interactive",
+      "tags": [
+        "interactive",
+        "daily",
+        "record"
+      ],
+      "popup": {
+        "character": "asking",
+        "prompts": [
+          "지금 뭐 하고 있어요? 😊",
+          "오늘 하루 어때요?",
+          "한 줄로 남겨볼까요?",
+          "뭔가 재밌는 일 있었나요?"
+        ],
+        "placeholder": "간단히 적어주세요...",
+        "inputType": "textarea",
+        "reminderMinutes": 5,
+        "maxReminders": 1,
+        "reminderPrompts": [
+          "아까 물어봤는데... 괜찮으면 알려줘요 😊",
+          "짧게라도 남겨보는 건 어때요?"
+        ]
+      },
+      "processing": {
+        "claude": {
+          "enabled": true,
+          "prompt": "이 내용을 Daily Note에 기록할 형태로 간단히 정리해주세요. 이모지 한 개 앞에 붙이고 한 줄로."
+        }
+      },
+      "output": {
+        "target": "obsidian-daily",
+        "section": "## ⏰ 시간별 메모",
+        "format": "- `{time}` {content}"
+      },
+      "command": "undefined",
+      "notes": "",
+      "execution": {
+        "timeout": 300000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      },
+      "options": []
+    },
+    {
+      "id": "env-check",
+      "name": "환경 검증",
+      "description": "환경변수, 설정 파일, API 연결 상태 종합 검증",
+      "command": "python scripts/check.py",
+      "schedule": "",
+      "enabled": true,
+      "category": "monitor",
+      "tags": [
+        "health",
+        "config",
+        "check"
+      ],
+      "options": [
+        {
+          "flag": "--fix",
+          "label": "해결 가이드",
+          "description": "문제 해결 방법 표시",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "flag": "--json",
+          "label": "JSON 출력",
+          "description": "JSON 형식으로 결과 출력",
+          "type": "boolean",
+          "default": false
+        }
+      ]
+    },
+    {
+      "id": "quick-memo",
+      "name": "빠른 메모",
+      "description": "즉시 메모를 Daily Note에 기록",
+      "command": "python scripts/quick.py",
+      "schedule": "",
+      "enabled": true,
+      "category": "daily",
+      "tags": [
+        "quick",
+        "memo",
+        "daily"
+      ],
+      "options": [
+        {
+          "arg": "message",
+          "label": "메모 내용",
+          "description": "기록할 메모 내용",
+          "type": "string",
+          "placeholder": "오늘 배운 것: ...",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "id": "weekly-digest",
+      "name": "주간 다이제스트",
+      "description": "한 주간 활동 분석 리포트 자동 생성 (AI 분석)",
+      "command": "curl -s -X POST http://localhost:3030/api/insights/weekly-digest -H 'Content-Type: application/json' -d '{}'",
+      "schedule": "0 18 * * 5",
+      "enabled": true,
+      "category": "review",
+      "tags": [
+        "weekly",
+        "digest",
+        "ai",
+        "analytics"
+      ],
+      "options": [],
+      "execution": {
+        "timeout": 600000,
+        "maxRetries": 0,
+        "retryDelay": 5000,
+        "backoff": "fixed"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1769798969230",
+      "from": "daily-init",
+      "to": "daily-update",
+      "label": ""
+    },
+    {
+      "id": "edge-1769860023251",
+      "from": "daily-init",
+      "to": "sync-github",
+      "label": ""
+    },
+    {
+      "id": "edge-1769860134359",
+      "from": "sync-github",
+      "to": "daily-update",
+      "label": "",
+      "trigger": true,
+      "onSuccess": true
+    }
+  ],
+  "categories": {
+    "interactive": {
+      "name": "인터랙티브",
+      "color": "#8b5cf6"
+    },
+    "monitor": {
+      "name": "모니터링",
+      "color": "#ef4444"
+    },
+    "vacuum": {
+      "name": "문서 정리",
+      "color": "#10b981"
+    },
+    "sync": {
+      "name": "동기화",
+      "color": "#3b82f6"
+    },
+    "daily": {
+      "name": "Daily Note",
+      "color": "#f59e0b"
+    },
+    "review": {
+      "name": "회고",
+      "color": "#ec4899"
+    },
+    "maintenance": {
+      "name": "정리",
+      "color": "#14b8a6"
+    },
+    "custom": {
+      "name": "사용자 정의",
+      "color": "#6b7280"
+    }
+  },
+  "settings": {
+    "slack": {
+      "webhookEnvVar": "SLACK_WEBHOOK_URL",
+      "defaultChannel": "#dev-notifications"
+    },
+    "slackWebhookUrl": "",
+    "slackEnabled": false,
+    "dashboardUrl": "http://localhost:3030",
+    "refreshInterval": 5,
+    "defaultTimeout": 10,
+    "defaultRetry": 0,
+    "notifications": {
+      "channels": [],
+      "rules": [
+        {
+          "id": "rule-migrated-1",
+          "event": "job.failed",
+          "channels": [
+            "slack-main"
+          ],
+          "filter": {}
+        },
+        {
+          "id": "rule-migrated-2",
+          "event": "job.success",
+          "channels": [
+            "slack-main"
+          ],
+          "filter": {}
+        }
+      ]
+    }
+  }
+}

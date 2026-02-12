@@ -50,6 +50,9 @@ node_modules/
 dashboard/.pid
 dashboard/data/
 dashboard/logs/
+dashboard/jobs.json
+dashboard/*.png
+dashboard/*.jpg
 
 # ===== Logs & Data =====
 *.log

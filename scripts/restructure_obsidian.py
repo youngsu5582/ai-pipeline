@@ -42,7 +42,7 @@ study/
 import shutil
 from pathlib import Path
 
-STUDY_PATH = Path("~/Documents/Obsidian/study")
+STUDY_PATH = Path.home() / "Documents" / "Obsidian" / "study"  # 환경에 맞게 수정
 
 # 폴더 매핑 (old → new)
 FOLDER_MAPPINGS = {

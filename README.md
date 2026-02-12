@@ -54,6 +54,40 @@ ai-weekly
 ai-monthly
 ```
 
+## 웹 대시보드
+
+CLI 스크립트를 통합 관리하는 **웹 대시보드**를 제공합니다.
+
+```bash
+cd dashboard
+npm install
+npm run dev    # http://localhost:3030
+```
+
+### 주요 기능
+
+| 기능 | 설명 |
+|------|------|
+| **작업 관리** | 크론 스케줄링, 수동 실행, 실행 이력/통계 |
+| **파이프라인** | 작업 간 의존성 그래프 + 조건부 실행 |
+| **통합 타임라인** | 메모, 세션, GitHub 활동을 시간순으로 조회 |
+| **AI 인사이트** | 주간 다이제스트, 생산성 분석, 스마트 서제스션 |
+| **세션 관리** | Claude Code 세션 요약 + 지식 그래프 시각화 |
+| **노트** | 빠른 메모/백로그 + AI 자동 분류 |
+| **알림** | Slack/Discord 채널별 규칙 기반 알림 |
+| **PWA** | 모바일 반응형 + 오프라인 지원 |
+
+### 탭 구조
+
+```
+홈 - 오늘의 요약, 타임라인, 빠른 액션
+작업 - 작업 목록 / 실행 이력 / 통계
+설정 - Slack, 웹훅, 알림 채널 관리
+세션 - 세션 목록 / 지식 그래프 / 리뷰 분석
+노트 - 메모 + 백로그 (카테고리 필터)
+분석 - 종합 / 하루 시작 / 오늘 보고서 / 주간 분석
+```
+
 ## 설치
 
 ### 1. 저장소 클론
@@ -259,7 +293,7 @@ ai-pipeline/
 ├── config/
 │   ├── settings.example.yaml  # 템플릿 (커밋됨)
 │   └── settings.local.yaml    # 개인 설정 (gitignore)
-├── scripts/
+├── scripts/                   # Python CLI 스크립트
 │   ├── config.py              # 설정 로딩 모듈
 │   ├── quick.py               # 빠른 메모
 │   ├── daily.py               # Daily Note 관리
@@ -268,6 +302,13 @@ ai-pipeline/
 │   ├── sync_github.py         # GitHub 동기화
 │   ├── processor.py           # AI 로그 처리
 │   └── aliases.sh             # Shell 별칭
+├── dashboard/                 # 웹 대시보드 (Node.js)
+│   ├── server.js              # Express 엔트리포인트
+│   ├── routes/                # API 라우터 (7개 모듈)
+│   ├── lib/                   # 비즈니스 로직 (10개 모듈)
+│   ├── public/index.html      # 싱글 페이지 UI
+│   ├── electron/              # 데스크톱 앱 (Electron)
+│   └── jobs.example.json      # 작업 정의 템플릿
 ├── docs/
 │   ├── SETUP.md               # 상세 설치 가이드
 │   ├── COMMANDS.md            # 명령어 상세
